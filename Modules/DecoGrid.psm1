@@ -14,32 +14,37 @@ function New-DecoratorGrid {
         [array]$Heroes,
         [hashtable]$PositionFields,
         [int]$Count = 10,
-        [string]$WinrateSeparator = " "
+        [string]$WinrateSeparator = " ",
+        [switch]$RoleNumbers
     )
     
     $Categories = @()
     
     foreach ($Pos in 1..5) {
-        $Info = $PositionFields[$Pos]
-        $Field = $Info.Field
-        $WinField = $Field -replace "_match$", "_win"
-        
-        $HeroesWithData = $Heroes | Where-Object { $_.($Field) -gt 0 } | Sort-Object { $_.($Field) } -Descending
-        $TopHeroes = $HeroesWithData | Select-Object -First $Count
-        
-        $WinrateStrings = @()
-        foreach ($hero in $TopHeroes) {
-            $matches = $hero.($Field)
+        if ($RoleNumbers) {
+            $CategoryName = "$Pos|"
+        } else {
+            $Info = $PositionFields[$Pos]
+            $Field = $Info.Field
+            $WinField = $Field -replace "_match$", "_win"
+            
+            $HeroesWithData = $Heroes | Where-Object { $_.($Field) -gt 0 } | Sort-Object { $_.($Field) } -Descending
+            $TopHeroes = $HeroesWithData | Select-Object -First $Count
+            
+            $WinrateStrings = @()
+            foreach ($hero in $TopHeroes) {
+            $matchCount = $hero.($Field)
             $wins = $hero.($WinField)
-            $wr = if ($matches -gt 0) { [math]::Round(($wins / $matches) * 100) } else { 0 }
-            $WinrateStrings += "$wr%"
+            $wr = if ($matchCount -gt 0) { [math]::Round(($wins / $matchCount) * 100) } else { 0 }
+                $WinrateStrings += "$wr%"
+            }
+            
+            while ($WinrateStrings.Count -lt $Count) {
+                $WinrateStrings += "0%"
+            }
+            
+            $CategoryName = $WinrateStrings -join $WinrateSeparator
         }
-        
-        while ($WinrateStrings.Count -lt $Count) {
-            $WinrateStrings += "0%"
-        }
-        
-        $CategoryName = $WinrateStrings -join $WinrateSeparator
         
         $Categories += [PSCustomObject]@{
             category_name = $CategoryName

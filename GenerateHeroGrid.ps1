@@ -23,7 +23,7 @@ function Format-Json {
             $escape = $false
             continue
         }
-        if ($ch -eq '\\') {
+        if ($ch -eq '\') {
             $result += $ch
             $escape = $true
             continue
@@ -205,7 +205,7 @@ $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid configs
 $TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
-$RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
+$RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -RoleNumbers
 $WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
 
 # Append categories to STRATZ config
@@ -233,8 +233,13 @@ foreach ($ConfigPath in $TargetCfgPaths) {
         $ExistingConfig | Add-Member -NotePropertyName configs -NotePropertyValue ([object[]]@())
     }
 
-    # Replace existing STRATZ config
-    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix })
+    # Backup existing config before overwrite
+    if (Test-Path $ConfigPath) {
+        Copy-Item $ConfigPath "$ConfigPath.bak" -Force
+    }
+
+    # Replace existing generated configs
+    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix -and $_.config_name -ne "ROLES" -and $_.config_name -ne "WINRATES" })
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
