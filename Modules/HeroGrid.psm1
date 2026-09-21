@@ -22,10 +22,8 @@ function New-HeroGridConfig {
         $Info = $PositionFields[$Pos]
         $SortedHeroes = $Heroes | Where-Object { $_.($Info.Field) -gt 1000 } | Sort-Object { $_.($Info.Field) } -Descending
         $TopHeroes = $SortedHeroes | Select-Object -First $MaxHeroes
-        $AllHeroes = $SortedHeroes
         
         $TopIds = @($TopHeroes.id)
-        $AllIds = @($AllHeroes.id)
         
         $Categories += [PSCustomObject]@{
             category_name = "$($Info.Name) Top"
@@ -34,15 +32,6 @@ function New-HeroGridConfig {
             width = $Width
             height = $Height
             hero_ids = $TopIds
-        }
-        
-        $Categories += [PSCustomObject]@{
-            category_name = "$($Info.Name) All"
-            x_position = 0
-            y_position = (($Pos - 1) * $YOffset) + $Height
-            width = $Width
-            height = $Height
-            hero_ids = $AllIds
         }
     }
     

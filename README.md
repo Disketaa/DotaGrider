@@ -21,16 +21,11 @@ Automatically generates and updates Dota 2 hero grids based on Stratz stats on g
 
 ## Generated Grids
 
-- Top Carry Heroes (top 15 by pick rate)
-- All Carry Heroes
-- Top Mid Heroes (top 15 by pick rate)
-- All Mid Heroes
-- Top Offlane Heroes (top 15 by pick rate)
-- All Offlane Heroes
-- Top Support Heroes (top 15 by pick rate)
-- All Support Heroes
-- Top Hard Support Heroes (top 15 by pick rate)
-- All Hard Support Heroes
+- Top Carry Heroes (top 7 by pick rate)
+- Top Mid Heroes (top 7 by pick rate)
+- Top Offlane Heroes (top 7 by pick rate)
+- Top Support Heroes (top 7 by pick rate)
+- Top Hard Support Heroes (top 7 by pick rate)
 
 ## Files
 

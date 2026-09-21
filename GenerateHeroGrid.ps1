@@ -153,37 +153,13 @@ foreach ($row in $RawStats) {
 }
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
-# Generate grid configs
-foreach ($Pos in 1..5) {
-    $Info = $PositionFields[$Pos]
-    $SortedHeroes = $Heroes | Where-Object { $_.($Info.Field) -gt 1000 } | Sort-Object { $_.($Info.Field) } -Descending
-    $AllHeroes = $SortedHeroes
-    $AllIds = @($AllHeroes.id)
-    
-    $AllCategories += [PSCustomObject]@{
-        category_name = $Info.Name
-        x_position = 0
-        y_position = ($Pos - 1) * $YOffset
-        width = $Width
-        height = $Height
-        hero_ids = $AllIds
-    }
-}
-
-$AllConfig = [PSCustomObject]@{
-    version = 3
-    configs = @(
-        [PSCustomObject]@{
-            config_name = "$($TopConfig.configs[0].config_name) - All Heroes"
-            categories = $AllCategories
-        }
-    )
-}
+# Generate grid config
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -ConfigPrefix $ConfigPrefix
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
     if (Test-Path $ConfigPath) {
-        $rawContent = Get-Content $ConfigPath -Raw
+        $rawContent = [System.IO.File]::ReadAllText($ConfigPath, [System.Text.UTF8Encoding]::new($false))
         if ($rawContent -and $rawContent.Trim()) {
             $ExistingConfig = $rawContent | ConvertFrom-Json
         } else {
@@ -201,21 +177,37 @@ foreach ($ConfigPath in $TargetCfgPaths) {
         $ExistingConfig | Add-Member -NotePropertyName configs -NotePropertyValue ([object[]]@())
     }
 
-    Write-Host "DEBUG: About to merge configs..."
-    Write-Host "DEBUG: ExistingConfig.configs type: $($ExistingConfig.configs.GetType().FullName)"
-    Write-Host "DEBUG: TopConfig.configs type: $($TopConfig.configs.GetType().FullName)"
-    Write-Host "DEBUG: AllConfig.configs type: $($AllConfig.configs.GetType().FullName)"
-    
-    $merged = $ExistingConfig.configs + $TopConfig.configs + $AllConfig.configs
-    Write-Host "DEBUG: Merged type: $($merged.GetType().FullName)"
-    
-    $ExistingConfig.configs = @($merged)
+    # Remove broken/malformed configs from existing file
+    $CleanConfigs = @()
+    foreach ($Config in $ExistingConfig.configs) {
+        $isValid = $true
+        
+        # Check width/height are integers (not floats from corrupted data)
+        foreach ($Category in $Config.categories) {
+            if ($Category.width -ne [int]$Category.width -or $Category.height -ne [int]$Category.height) {
+                $isValid = $false
+                break
+            }
+        }
+        
+        # Check config name contains expected prefix and is not an old "All Heroes" config
+        if ($isValid -and ($Config.config_name -notlike "*$ConfigPrefix*" -or $Config.config_name -like "*All Heroes*")) {
+            $isValid = $false
+        }
+        
+        if ($isValid) {
+            $CleanConfigs += $Config
+        }
+    }
+    $ExistingConfig.configs = $CleanConfigs
+
+    $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
 
     $UniqueConfigs = @{}
     foreach ($Config in $ExistingConfig.configs) {
         $UniqueConfigs[$Config.config_name] = $Config
     }
-    $ExistingConfig.configs = $UniqueConfigs.Values | Sort-Object { $_.config_name }
+    $ExistingConfig.configs = @($UniqueConfigs.Values | Sort-Object { $_.config_name })
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
     $formatted = Format-Json -Json $json

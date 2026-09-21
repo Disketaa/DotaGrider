@@ -14,7 +14,7 @@ function Get-ActiveSteamUserId {
     }
     
     $content = Get-Content $SteamConfigPath -Raw
-    $activeUserId = $null
+    $activeUserId64 = $null
     $currentUser = $null
     $lines = $content -split "`r?`n"
     
@@ -23,19 +23,22 @@ function Get-ActiveSteamUserId {
         if ($line -match '^"(\d+)"$') {
             $currentUser = $matches[1]
         }
-        if ($currentUser -and $line -eq '"AutoLogin"') {
-            $nextLine = $lines[$i + 1].Trim()
-            if ($nextLine -match '"\d+"') {
-                $autoLoginValue = $matches[0].Trim('"')
-                if ($autoLoginValue -eq "1") {
-                    $activeUserId = $currentUser
-                    break
-                }
+        if ($currentUser -and $line -match '^"AutoLogin"\s+"(\d+)"$') {
+            if ($matches[1] -eq '1') {
+                $activeUserId64 = $currentUser
+                break
             }
         }
     }
     
-    return $activeUserId
+    # Convert SteamID64 to SteamID32 (used in userdata folder names)
+    if ($activeUserId64) {
+        $steamId64 = [long]$activeUserId64
+        $steamId32 = $steamId64 - 76561197960265728
+        return $steamId32.ToString()
+    }
+    
+    return $null
 }
 
 function Get-SteamUserdataFolders {
