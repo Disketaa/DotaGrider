@@ -11,7 +11,7 @@ For i = 0 To WScript.Arguments.Count - 1
     dotaCmd = dotaCmd & " " & chr(34) & WScript.Arguments(i) & chr(34)
 Next
 
-' Launch Dota
+' Launch Dota and wait for it
 If dotaCmd <> "" Then
-    sh.Run dotaCmd, 1, False
+    sh.Run dotaCmd, 1, True
 End If

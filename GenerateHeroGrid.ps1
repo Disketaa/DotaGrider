@@ -8,7 +8,7 @@ Import-Module "$PSScriptRoot\Modules\Settings.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Steam.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
-Import-Module "$PSScriptRoot\Modules\EmptyGrid.psm1" -Force
+Import-Module "$PSScriptRoot\Modules\DecoGrid.psm1" -Force
 
 function Format-Json {
     param([string]$Json)
@@ -112,6 +112,13 @@ $XOffset = $StratzGrid.x_offset
 $ConfigPrefix = $StratzGrid.config_prefix
 $Language = $Settings.language
 
+# Winrate grid settings
+$WinrateGrid = $Settings.winrate_grid
+$WinrateSeparator = $WinrateGrid.separator
+$WinrateXOffset = $WinrateGrid.x_offset
+$WinrateYOffset = $WinrateGrid.y_offset
+$WinrateY = $WinrateGrid.y
+
 # Role grid settings
 $RoleGrid = $Settings.role_grid
 $RoleYOffset = $RoleGrid.y_offset
@@ -156,11 +163,11 @@ if (-not $TargetCfgPaths) {
 
 # Fetch hero stats
 $PositionFields = @{
-    1 = @{ Name = "Carry"; Field = "1_pick" }
-    2 = @{ Name = "Midlane"; Field = "2_pick" }
-    3 = @{ Name = "Offlane"; Field = "3_pick" }
-    4 = @{ Name = "Support"; Field = "4_pick" }
-    5 = @{ Name = "Hard Support"; Field = "5_pick" }
+    1 = @{ Name = "Carry"; Field = "1_match" }
+    2 = @{ Name = "Midlane"; Field = "2_match" }
+    3 = @{ Name = "Offlane"; Field = "3_match" }
+    4 = @{ Name = "Support"; Field = "4_match" }
+    5 = @{ Name = "Hard Support"; Field = "5_match" }
 }
 
 $StratzToken = $Settings.api.stratz_token
@@ -173,28 +180,37 @@ foreach ($row in $RawStats) {
     if (-not $Heroes[$heroId]) {
         $Heroes[$heroId] = [ordered]@{
             id = $heroId
-            "1_pick" = 0
-            "2_pick" = 0
-            "3_pick" = 0
-            "4_pick" = 0
-            "5_pick" = 0
+            "1_match" = 0
+            "1_win" = 0
+            "2_match" = 0
+            "2_win" = 0
+            "3_match" = 0
+            "3_win" = 0
+            "4_match" = 0
+            "4_win" = 0
+            "5_match" = 0
+            "5_win" = 0
         }
     }
     $pos = $row.position
     if ($pos -match 'POSITION_(\d)') {
         $posNum = [int]$matches[1]
-        $field = "${posNum}_pick"
-        $Heroes[$heroId][$field] = $row.matchCount
+        $matchField = "${posNum}_match"
+        $winField = "${posNum}_win"
+        $Heroes[$heroId][$matchField] = $row.matchCount
+        $Heroes[$heroId][$winField] = $row.winCount
     }
 }
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid configs
 $TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
-$RoleCategories = New-EmptyRoleGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES"
+$RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
+$WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
 
-# Append role categories to STRATZ config
+# Append categories to STRATZ config
 $TopConfig.configs[0].categories += $RoleCategories.configs[0].categories
+$TopConfig.configs[0].categories += $WinrateCategories.configs[0].categories
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
