@@ -6,7 +6,6 @@ $ErrorActionPreference = "Stop"
 # Import modules
 Import-Module "$PSScriptRoot\Modules\Settings.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Steam.psm1" -Force
-Import-Module "$PSScriptRoot\Modules\OpenDota.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
 
@@ -128,42 +127,33 @@ $PositionFields = @{
     5 = @{ Name = "Hard Support"; Field = "5_pick" }
 }
 
-if ($ApiProvider -eq "stratz") {
-    $StratzToken = $Settings.api.stratz_token
-    $RawStats = Get-StratzHeroStats -Token $StratzToken
-    
-    # Transform Stratz data to match OpenDota format
-    $Heroes = @{}
-    foreach ($row in $RawStats) {
-        $heroId = $row.heroId
-        if (-not $Heroes[$heroId]) {
-            $Heroes[$heroId] = [ordered]@{
-                id = $heroId
-                "1_pick" = 0
-                "2_pick" = 0
-                "3_pick" = 0
-                "4_pick" = 0
-                "5_pick" = 0
-            }
-        }
-        $pos = $row.position
-        if ($pos -match 'POSITION_(\d)') {
-            $posNum = [int]$matches[1]
-            $field = "${posNum}_pick"
-            $Heroes[$heroId][$field] = $row.matchCount
+$StratzToken = $Settings.api.stratz_token
+$RawStats = Get-StratzHeroStats -Token $StratzToken
+
+# Transform Stratz data to match internal format
+$Heroes = @{}
+foreach ($row in $RawStats) {
+    $heroId = $row.heroId
+    if (-not $Heroes[$heroId]) {
+        $Heroes[$heroId] = [ordered]@{
+            id = $heroId
+            "1_pick" = 0
+            "2_pick" = 0
+            "3_pick" = 0
+            "4_pick" = 0
+            "5_pick" = 0
         }
     }
-    $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
+    $pos = $row.position
+    if ($pos -match 'POSITION_(\d)') {
+        $posNum = [int]$matches[1]
+        $field = "${posNum}_pick"
+        $Heroes[$heroId][$field] = $row.matchCount
+    }
 }
-else {
-    $Heroes = Get-OpenDotaHeroStats -BaseUrl $Settings.api.opendota_url
-}
+$Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid configs
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -ConfigPrefix $ConfigPrefix
-
-# Also generate "All Heroes" config
-$AllCategories = @()
 foreach ($Pos in 1..5) {
     $Info = $PositionFields[$Pos]
     $SortedHeroes = $Heroes | Where-Object { $_.($Info.Field) -gt 1000 } | Sort-Object { $_.($Info.Field) } -Descending
@@ -193,12 +183,33 @@ $AllConfig = [PSCustomObject]@{
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
     if (Test-Path $ConfigPath) {
-        $ExistingConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+        $rawContent = Get-Content $ConfigPath -Raw
+        if ($rawContent -and $rawContent.Trim()) {
+            $ExistingConfig = $rawContent | ConvertFrom-Json
+        } else {
+            $ExistingConfig = $null
+        }
     } else {
-        $ExistingConfig = @{ version = 3; configs = @() }
+        $ExistingConfig = $null
+    }
+    
+    if (-not $ExistingConfig) {
+        $ExistingConfig = [PSCustomObject]@{ version = 3; configs = @() }
+    }
+    
+    if (-not $ExistingConfig.PSObject.Properties['configs']) {
+        $ExistingConfig | Add-Member -NotePropertyName configs -NotePropertyValue ([object[]]@())
     }
 
-    $ExistingConfig.configs = @($ExistingConfig.configs + $TopConfig.configs + $AllConfig.configs)
+    Write-Host "DEBUG: About to merge configs..."
+    Write-Host "DEBUG: ExistingConfig.configs type: $($ExistingConfig.configs.GetType().FullName)"
+    Write-Host "DEBUG: TopConfig.configs type: $($TopConfig.configs.GetType().FullName)"
+    Write-Host "DEBUG: AllConfig.configs type: $($AllConfig.configs.GetType().FullName)"
+    
+    $merged = $ExistingConfig.configs + $TopConfig.configs + $AllConfig.configs
+    Write-Host "DEBUG: Merged type: $($merged.GetType().FullName)"
+    
+    $ExistingConfig.configs = @($merged)
 
     $UniqueConfigs = @{}
     foreach ($Config in $ExistingConfig.configs) {

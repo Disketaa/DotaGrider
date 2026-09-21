@@ -1,6 +1,6 @@
 # Dota 2 Hero Grid Generator
 
-Automatically generates and updates Dota 2 hero grids based on OpenDota stats on game launch.
+Automatically generates and updates Dota 2 hero grids based on Stratz stats on game launch.
 
 ## Setup
 
@@ -14,7 +14,7 @@ Automatically generates and updates Dota 2 hero grids based on OpenDota stats on
 ## How It Works
 
 - `launch_dota_with_grid.bat` runs `Generate-HeroGrid.ps1` before launching Dota 2
-- The PowerShell script fetches latest hero stats from OpenDota API
+- The PowerShell script fetches latest hero stats from Stratz API
 - Generates hero grid configs for each role (Carry, Mid, Offlane, Support, Hard Support)
 - **Merges with existing hero grids** - does not overwrite user-created configs
 - Works for all Steam users on the PC (universal)
@@ -41,4 +41,5 @@ Automatically generates and updates Dota 2 hero grids based on OpenDota stats on
 
 - Windows with Steam installed
 - PowerShell 5.1+
-- Internet connection (to fetch hero stats from OpenDota)
+- Internet connection (to fetch hero stats from Stratz)
+- Stratz API token configured in `Content\Settings.toml`
