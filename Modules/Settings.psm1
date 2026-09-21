@@ -30,7 +30,7 @@ function Read-Settings {
                 $settings[$currentSection][$key] = $value
             }
         }
-        elseif ($line -match '^([^=]+)\s*=\s*(\d+)$') {
+        elseif ($line -match '^([^=]+)\s*=\s*(-?\d+)$') {
             $key = $matches[1].Trim()
             $value = [int]$matches[2]
             if ($currentSection) {

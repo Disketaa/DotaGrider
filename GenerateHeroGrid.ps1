@@ -79,6 +79,7 @@ $MaxHeroes = $Settings.grid.max_heroes
 $Width = $Settings.grid.width
 $Height = $Settings.grid.height
 $YOffset = $Settings.grid.y_offset
+$InitialY = $Settings.grid.initial_y
 $ConfigPrefix = $Settings.grid.config_prefix
 $Language = $Settings.grid.language
 $SteamPath = $Settings.steam.steam_path
@@ -154,7 +155,7 @@ foreach ($row in $RawStats) {
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid config
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -ConfigPrefix $ConfigPrefix -Language $Language
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -InitialY $InitialY -ConfigPrefix $ConfigPrefix -Language $Language
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
