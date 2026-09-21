@@ -38,16 +38,22 @@ function Format-Json {
             continue
         }
         if ($ch -eq '{' -or $ch -eq '[') {
-            $result += $ch
             $nextNonWs = $i + 1
             while ($nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -match '\s') {
                 $nextNonWs++
             }
-            if ($nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -eq $(if ($ch -eq '{') { '}' } else { ']' })) {
-                $result += $Json[$nextNonWs]
+            $isEmpty = $nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -eq $(if ($ch -eq '{') { '}' } else { ']' })
+            
+            if ($isEmpty) {
+                $result += $ch
+                $result += "`r`n"
+                $result += '    ' * $indent
+                $result += $(if ($ch -eq '[') { ']' } else { '}' })
                 $i = $nextNonWs
                 continue
             }
+            
+            $result += $ch
             $result += "`r`n"
             $indent++
             $result += '    ' * $indent
@@ -68,7 +74,16 @@ function Format-Json {
         }
         if ($ch -eq ':') {
             $result += $ch
-            $result += ' '
+            $nextNonWs = $i + 1
+            while ($nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -match '\s') {
+                $nextNonWs++
+            }
+            if ($nextNonWs -lt $Json.Length -and ($Json[$nextNonWs] -eq '[' -or $Json[$nextNonWs] -eq '{')) {
+                $result += "`r`n"
+                $result += '    ' * $indent
+            } else {
+                $result += ' '
+            }
             continue
         }
         if ($ch -match '\s') {
@@ -176,7 +191,7 @@ $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid configs
 $TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
-$RoleCategories = New-EmptyRoleGrid -YOffset $RoleYOffset -Y $RoleY -XOffset $RoleXOffset -ConfigPrefix "ROLES"
+$RoleCategories = New-EmptyRoleGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES"
 
 # Append role categories to STRATZ config
 $TopConfig.configs[0].categories += $RoleCategories.configs[0].categories

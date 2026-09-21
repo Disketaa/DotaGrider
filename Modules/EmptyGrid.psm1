@@ -8,6 +8,7 @@ function New-EmptyRoleGrid {
     param(
         [int]$YOffset,
         [int]$Y,
+        [int]$Offset = 0,
         [int]$XOffset = -50,
         [string]$ConfigPrefix
     )
@@ -18,7 +19,7 @@ function New-EmptyRoleGrid {
         $Categories += [PSCustomObject]@{
             category_name = "$Pos|"
             x_position = $XOffset
-            y_position = $(if ($Pos -eq 1) { $Y } else { ($Pos - 1) * $YOffset })
+            y_position = $Y + ($Pos - 1) * $YOffset + $Offset
             width = 0
             height = 0
             hero_ids = @()
