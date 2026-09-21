@@ -171,11 +171,14 @@ $PositionFields = @{
 }
 
 $StratzToken = $Settings.api.stratz_token
-$RawStats = Get-StratzHeroStats -Token $StratzToken
+$StratzBracket = $Settings.api.stratz_bracket
+$StratzWeeksBack = $Settings.api.stratz_weeks_back
+$RawStats = Get-StratzHeroStats -Token $StratzToken -Bracket $StratzBracket -WeeksBack $StratzWeeksBack
 
 # Transform Stratz data to match internal format
 $Heroes = @{}
 foreach ($row in $RawStats) {
+    if ($row.matchCount -le 200) { continue }
     $heroId = $row.heroId
     if (-not $Heroes[$heroId]) {
         $Heroes[$heroId] = [ordered]@{
