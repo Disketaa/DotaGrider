@@ -8,6 +8,7 @@ Import-Module "$PSScriptRoot\Modules\Settings.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Steam.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
+Import-Module "$PSScriptRoot\Modules\EmptyGrid.psm1" -Force
 
 function Format-Json {
     param([string]$Json)
@@ -38,6 +39,15 @@ function Format-Json {
         }
         if ($ch -eq '{' -or $ch -eq '[') {
             $result += $ch
+            $nextNonWs = $i + 1
+            while ($nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -match '\s') {
+                $nextNonWs++
+            }
+            if ($nextNonWs -lt $Json.Length -and $Json[$nextNonWs] -eq $(if ($ch -eq '{') { '}' } else { ']' })) {
+                $result += $Json[$nextNonWs]
+                $i = $nextNonWs
+                continue
+            }
             $result += "`r`n"
             $indent++
             $result += '    ' * $indent
@@ -75,13 +85,23 @@ function Format-Json {
 # Load settings
 $Settings = Read-Settings -Path "$PSScriptRoot\Content\Settings.toml"
 $ApiProvider = $Settings.api.provider
-$MaxHeroes = $Settings.grid.max_heroes
-$Width = $Settings.grid.width
-$Height = $Settings.grid.height
-$YOffset = $Settings.grid.y_offset
-$InitialY = $Settings.grid.initial_y
-$ConfigPrefix = $Settings.grid.config_prefix
-$Language = $Settings.grid.language
+
+# Stratz grid settings
+$StratzGrid = $Settings.stratz_grid
+$MaxHeroes = $StratzGrid.max_heroes
+$Width = $StratzGrid.width
+$Height = $StratzGrid.height
+$YOffset = $StratzGrid.y_offset
+$InitialY = $StratzGrid.y
+$XOffset = $StratzGrid.x_offset
+$ConfigPrefix = $StratzGrid.config_prefix
+$Language = $Settings.language
+
+# Role grid settings
+$RoleGrid = $Settings.role_grid
+$RoleYOffset = $RoleGrid.y_offset
+$RoleY = $RoleGrid.y
+$RoleXOffset = $RoleGrid.x_offset
 $SteamPath = $Settings.steam.steam_path
 $ConfigFileName = "hero_grid_config.json"
 
@@ -154,8 +174,12 @@ foreach ($row in $RawStats) {
 }
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
-# Generate grid config
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -InitialY $InitialY -ConfigPrefix $ConfigPrefix -Language $Language
+# Generate grid configs
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
+$RoleCategories = New-EmptyRoleGrid -YOffset $RoleYOffset -Y $RoleY -XOffset $RoleXOffset -ConfigPrefix "ROLES"
+
+# Append role categories to STRATZ config
+$TopConfig.configs[0].categories += $RoleCategories.configs[0].categories
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
@@ -178,7 +202,7 @@ foreach ($ConfigPath in $TargetCfgPaths) {
         $ExistingConfig | Add-Member -NotePropertyName configs -NotePropertyValue ([object[]]@())
     }
 
-    # Replace existing STRATZ config or append new one
+    # Replace existing STRATZ config
     $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix })
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
 

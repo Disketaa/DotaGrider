@@ -12,7 +12,8 @@ function New-HeroGridConfig {
         [int]$Width,
         [int]$Height,
         [int]$YOffset,
-        [int]$InitialY,
+        [int]$Y,
+        [int]$XOffset = 0,
         [string]$ConfigPrefix,
         [string]$Language = "en"
     )
@@ -46,8 +47,8 @@ function New-HeroGridConfig {
         
         $Categories += [PSCustomObject]@{
             category_name = $CategoryName
-            x_position = 0
-            y_position = $(if ($Pos -eq 1) { $InitialY } else { ($Pos - 1) * $YOffset })
+            x_position = $XOffset
+            y_position = $(if ($Pos -eq 1) { $Y } else { ($Pos - 1) * $YOffset })
             width = $Width
             height = $Height
             hero_ids = $TopIds

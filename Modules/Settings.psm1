@@ -28,6 +28,8 @@ function Read-Settings {
             $value = $matches[2]
             if ($currentSection) {
                 $settings[$currentSection][$key] = $value
+            } else {
+                $settings[$key] = $value
             }
         }
         elseif ($line -match '^([^=]+)\s*=\s*(-?\d+)$') {
@@ -35,6 +37,8 @@ function Read-Settings {
             $value = [int]$matches[2]
             if ($currentSection) {
                 $settings[$currentSection][$key] = $value
+            } else {
+                $settings[$key] = $value
             }
         }
     }
