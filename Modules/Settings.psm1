@@ -16,7 +16,7 @@ function Read-Settings {
     $settings = @{}
     $currentSection = $null
     
-    Get-Content $Path | ForEach-Object {
+    Get-Content $Path -Encoding UTF8 | ForEach-Object {
         $line = $_.Trim()
         
         if ($line -match '^\[(.+)\]$') {
@@ -42,4 +42,26 @@ function Read-Settings {
     return $settings
 }
 
-Export-ModuleMember -Function Read-Settings
+function Read-KeyValueFile {
+    [CmdletBinding()]
+    param(
+        [string]$Path
+    )
+    
+    if (-not (Test-Path $Path)) {
+        return @{}
+    }
+    
+    $result = @{}
+    Get-Content $Path -Encoding UTF8 | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -match '^([^=]+)\s*=\s*"(.+)"$') {
+            $key = $matches[1].Trim()
+            $value = $matches[2]
+            $result[$key] = $value
+        }
+    }
+    return $result
+}
+
+Export-ModuleMember -Function Read-Settings, Read-KeyValueFile

@@ -53,7 +53,7 @@ function Get-SteamUserdataFolders {
         if ($folder) {
             return @($folder)
         }
-        Write-Host "Active user folder not found, falling back to all users."
+        throw "Active user folder '$ActiveUserId' not found under $SteamUserdataPath"
     }
     
     return Get-ChildItem -Path $SteamUserdataPath -Directory | Where-Object { $_.Name -match '^\d+$' }

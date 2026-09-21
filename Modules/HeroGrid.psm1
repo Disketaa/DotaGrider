@@ -21,17 +21,7 @@ function New-HeroGridConfig {
     
     # Load language file
     $LangPath = Join-Path $PSScriptRoot "..\Content\Language\$Language.toml"
-    $Translations = @{}
-    if (Test-Path $LangPath) {
-        Get-Content $LangPath | ForEach-Object {
-            $line = $_.Trim()
-            if ($line -match '^([^=]+)\s*=\s*"(.+)"$') {
-                $key = $matches[1].Trim()
-                $value = $matches[2]
-                $Translations[$key] = $value
-            }
-        }
-    }
+    $Translations = Read-KeyValueFile -Path $LangPath
     
     foreach ($Pos in 1..5) {
         $Info = $PositionFields[$Pos]
