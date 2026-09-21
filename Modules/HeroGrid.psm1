@@ -24,6 +24,12 @@ function New-HeroGridConfig {
     $LangPath = Join-Path $PSScriptRoot "..\Content\Language\$Language.toml"
     $Translations = Read-KeyValueFile -Path $LangPath
     
+    # Generate date-based name for first category in OS native language
+    $Now = Get-Date
+    $CultureCode = (Get-Culture).Name
+    $Culture = [System.Globalization.CultureInfo]::GetCultureInfo($CultureCode)
+    $DateStr = $Now.ToString("d MMMM, H:mm", $Culture)
+    
     foreach ($Pos in 1..5) {
         $Info = $PositionFields[$Pos]
         $SortedHeroes = $Heroes | Where-Object { $_.($Info.Field) -gt 1000 } | Sort-Object { $_.($Info.Field) } -Descending
@@ -31,16 +37,17 @@ function New-HeroGridConfig {
         
         $TopIds = @($TopHeroes.id)
         
-        # Translate category name if available
-        $CategoryName = $Info.Name
-        if ($Translations.ContainsKey($CategoryName)) {
-            $CategoryName = $Translations[$CategoryName]
+        # First category = current date, others = empty
+        if ($Pos -eq 1) {
+            $CategoryName = $DateStr
+        } else {
+            $CategoryName = ""
         }
         
         $Categories += [PSCustomObject]@{
             category_name = $CategoryName
             x_position = 0
-            y_position = $InitialY + ($Pos - 1) * $YOffset
+            y_position = $(if ($Pos -eq 1) { $InitialY } else { ($Pos - 1) * $YOffset })
             width = $Width
             height = $Height
             hero_ids = $TopIds

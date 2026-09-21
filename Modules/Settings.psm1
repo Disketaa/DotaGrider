@@ -24,7 +24,7 @@ function Read-Settings {
             $settings[$currentSection] = @{}
         }
         elseif ($line -match '^([^=]+)\s*=\s*"(.+)"$') {
-            $key = $matches[1].Trim()
+            $key = $matches[1].Trim().Trim('"')
             $value = $matches[2]
             if ($currentSection) {
                 $settings[$currentSection][$key] = $value
@@ -56,7 +56,7 @@ function Read-KeyValueFile {
     Get-Content $Path -Encoding UTF8 | ForEach-Object {
         $line = $_.Trim()
         if ($line -match '^([^=]+)\s*=\s*"(.+)"$') {
-            $key = $matches[1].Trim()
+            $key = $matches[1].Trim().Trim('"')
             $value = $matches[2]
             $result[$key] = $value
         }
