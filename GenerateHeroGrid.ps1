@@ -80,8 +80,8 @@ $Width = $Settings.grid.width
 $Height = $Settings.grid.height
 $YOffset = $Settings.grid.y_offset
 $ConfigPrefix = $Settings.grid.config_prefix
+$Language = $Settings.grid.language
 $SteamPath = $Settings.steam.steam_path
-$DotaAppId = $Settings.steam.dota_app_id
 $ConfigFileName = "hero_grid_config.json"
 
 Write-Host "=== DotaGrider ==="
@@ -98,7 +98,7 @@ $UserdataFolders = Get-SteamUserdataFolders -SteamUserdataPath $SteamUserdataPat
 
 $TargetCfgPaths = @()
 foreach ($UserFolder in $UserdataFolders) {
-    $CfgPath = Join-Path $UserFolder.FullName "$DotaAppId\remote\cfg\$ConfigFileName"
+    $CfgPath = Join-Path $UserFolder.FullName "570\remote\cfg\$ConfigFileName"
     if (Test-Path $CfgPath) {
         $TargetCfgPaths += $CfgPath
     }
@@ -111,7 +111,7 @@ if (-not $TargetCfgPaths) {
         Write-Host "No Steam userdata folders found."
         exit 1
     }
-    $NewCfgDir = Join-Path $FirstUser.FullName "$DotaAppId\remote\cfg"
+    $NewCfgDir = Join-Path $FirstUser.FullName "570\remote\cfg"
     if (-not (Test-Path $NewCfgDir)) {
         New-Item -ItemType Directory -Path $NewCfgDir -Force | Out-Null
     }
@@ -121,7 +121,7 @@ if (-not $TargetCfgPaths) {
 # Fetch hero stats
 $PositionFields = @{
     1 = @{ Name = "Carry"; Field = "1_pick" }
-    2 = @{ Name = "Mid"; Field = "2_pick" }
+    2 = @{ Name = "Midlane"; Field = "2_pick" }
     3 = @{ Name = "Offlane"; Field = "3_pick" }
     4 = @{ Name = "Support"; Field = "4_pick" }
     5 = @{ Name = "Hard Support"; Field = "5_pick" }
@@ -154,7 +154,7 @@ foreach ($row in $RawStats) {
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Generate grid config
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -ConfigPrefix $ConfigPrefix
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -ConfigPrefix $ConfigPrefix -Language $Language
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
@@ -168,46 +168,18 @@ foreach ($ConfigPath in $TargetCfgPaths) {
     } else {
         $ExistingConfig = $null
     }
-    
+
     if (-not $ExistingConfig) {
         $ExistingConfig = [PSCustomObject]@{ version = 3; configs = @() }
     }
-    
+
     if (-not $ExistingConfig.PSObject.Properties['configs']) {
         $ExistingConfig | Add-Member -NotePropertyName configs -NotePropertyValue ([object[]]@())
     }
 
-    # Remove broken/malformed configs from existing file
-    $CleanConfigs = @()
-    foreach ($Config in $ExistingConfig.configs) {
-        $isValid = $true
-        
-        # Check width/height are integers (not floats from corrupted data)
-        foreach ($Category in $Config.categories) {
-            if ($Category.width -ne [int]$Category.width -or $Category.height -ne [int]$Category.height) {
-                $isValid = $false
-                break
-            }
-        }
-        
-        # Check config name contains expected prefix and is not an old "All Heroes" config
-        if ($isValid -and ($Config.config_name -notlike "*$ConfigPrefix*" -or $Config.config_name -like "*All Heroes*")) {
-            $isValid = $false
-        }
-        
-        if ($isValid) {
-            $CleanConfigs += $Config
-        }
-    }
-    $ExistingConfig.configs = $CleanConfigs
-
+    # Replace existing STRATZ config or append new one
+    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix })
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
-
-    $UniqueConfigs = @{}
-    foreach ($Config in $ExistingConfig.configs) {
-        $UniqueConfigs[$Config.config_name] = $Config
-    }
-    $ExistingConfig.configs = @($UniqueConfigs.Values | Sort-Object { $_.config_name })
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
     $formatted = Format-Json -Json $json
