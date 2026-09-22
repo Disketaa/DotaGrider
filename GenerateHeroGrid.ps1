@@ -106,68 +106,47 @@ function Format-Json {
     }
     return $result
 }
-# Load settings or prompt for first-run setup
-
-$SettingsPath = "$PSScriptRoot\Settings.toml"
-
-if (-not (Test-Path $SettingsPath)) {
-    Write-Host "=== First Run Setup ==="
-    Write-Host "Settings.toml not found. Creating from template."
-    
-    $Token = Read-Host "Enter your Stratz API token (get one at https://stratz.com/api)"
-    if ([string]::IsNullOrWhiteSpace($Token)) {
-        Write-Host "Token is required. Exiting."
-        exit 1
-    }
-    
-    $AccountId = Read-Host "Enter your Steam account ID (32-bit, find it at https://www.stratz.com/player/YOUR_STEAM_ID)"
-    
-    $SettingsContent = @"
-# DotaGrider Settings
-language = "Russian"
-
-[api]
-provider = "stratz"
-stratz_token = "$Token"
-stratz_bracket = "DIVINE"
-stratz_weeks_back = 1
-stratz_account_id = "$AccountId"
-
-[stratz_grid]
-config_prefix = "STRATZ"
-y = 0
-x_offset = 20
-y_offset = 110
-width = 750
-height = 100
-max_heroes = 10
-
-[recent_grid]
-x_offset = 720
-width = 750
-max_heroes = 6
-
-[role_grid]
-y = 62
-x_offset = 0
-y_offset = 110
-
-[winrate_grid]
-separator = "    "
-y = 115
-x_offset = 34
-y_offset = 110
-
-[steam]
-steam_path = "C:\\Program Files (x86)\\Steam"
-"@
-    Set-Content -Path $SettingsPath -Value $SettingsContent -Encoding UTF8
-    Write-Host "Settings.toml created."
-}
 # Load settings
 
 $SettingsPath = "$PSScriptRoot\Settings.toml"
+$TokenPath = "$PSScriptRoot\Token.toml"
+
+if (-not (Test-Path $SettingsPath)) {
+    Write-Host "ERROR: Settings.toml not found."
+    Write-Host "Create Settings.toml with grid and language settings."
+    exit 1
+}
+
+if (-not (Test-Path $TokenPath)) {
+    Write-Host "ERROR: Token.toml not found."
+    Write-Host "Create Token.toml with stratz_token and stratz_account_id under [api]."
+    exit 1
+}
+
 $Settings = Read-Settings -Path $SettingsPath
+$TokenSettings = Read-Settings -Path $TokenPath
+
+# Merge token settings into main settings
+if ($TokenSettings.api) {
+    foreach ($key in $TokenSettings.api.Keys) {
+        $Settings.api[$key] = $TokenSettings.api[$key]
+    }
+}
+
+# Validate required settings
+$StratzToken = $Settings.api.stratz_token
+$StratzAccountId = $Settings.api.stratz_account_id
+
+if (-not $StratzToken) {
+    Write-Host "ERROR: stratz_token missing in Token.toml under [api]."
+    exit 1
+}
+
+if (-not $StratzAccountId) {
+    Write-Host "ERROR: stratz_account_id missing in Token.toml under [api]."
+    exit 1
+}
+
 $ApiProvider = $Settings.api.provider
 
 # Stratz grid settings
@@ -202,7 +181,6 @@ $SteamPath = $Settings.steam.steam_path
 $ConfigFileName = "hero_grid_config.json"
 
 # STRATZ account settings
-$StratzAccountId = $Settings.api.stratz_account_id
 $RecentMatchLimit = 20
 
 # Recent grid settings
@@ -256,7 +234,6 @@ $PositionFields = @{
     5 = @{ Name = "Hard Support"; Field = "5_match" }
 }
 
-$StratzToken = $Settings.api.stratz_token
 $StratzBracket = $Settings.api.stratz_bracket
 $StratzWeeksBack = $Settings.api.stratz_weeks_back
 $RawStats = Get-StratzHeroStats -Token $StratzToken -Bracket $StratzBracket -WeeksBack $StratzWeeksBack
@@ -328,10 +305,10 @@ foreach ($hero in $Heroes) {
 $RecentPositionCategories = @()
 if ($StratzAccountId) {
     try {
-        $Matches = Get-StratzPlayerMatches -Token $StratzToken -SteamAccountId $StratzAccountId -Take $RecentMatchLimit
+        $RecentMatches = Get-StratzPlayerMatches -Token $StratzToken -SteamAccountId $StratzAccountId -Take $RecentMatchLimit
         
         $LaneHeroes = @{}
-        foreach ($match in $Matches) {
+        foreach ($match in $RecentMatches) {
             if (-not $match.heroId -or -not $match.position) { continue }
             
             $heroId = [int]$match.heroId
@@ -352,7 +329,7 @@ if ($StratzAccountId) {
             $LaneHeroes[$posNum].Add($heroId)
         }
         
-        Write-Host "Fetched $($Matches.Count) recent matches from STRATZ"
+        Write-Host "Fetched $($RecentMatches.Count) recent matches from STRATZ"
         foreach ($pos in 1..5) {
             if ($LaneHeroes[$pos]) {
                 Write-Host "Position $pos : $($LaneHeroes[$pos].Count) heroes"

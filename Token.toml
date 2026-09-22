@@ -1,0 +1,6 @@
+# DotaGrider Token Configuration
+# This file contains sensitive data. Do not commit to version control.
+
+[api]
+stratz_token = ""
+stratz_account_id = ""
