@@ -9,6 +9,7 @@ Import-Module "$PSScriptRoot\Modules\Steam.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\DecoGrid.psm1" -Force
+Import-Module "$PSScriptRoot\Modules\OpenDota.psm1" -Force
 
 function Format-DotaNumbers {
     param([string]$Json)
@@ -107,8 +108,37 @@ function Format-Json {
     return $result
 }
 
+# Load settings or prompt for first-run setup
+$SettingsPath = "$PSScriptRoot\Content\Settings.toml"
+$SettingsExamplePath = "$PSScriptRoot\Content\Settings.toml.example"
+
+if (-not (Test-Path $SettingsPath)) {
+    Write-Host "=== First Run Setup ==="
+    Write-Host "Settings.toml not found. Creating from template."
+    
+    if (-not (Test-Path $SettingsExamplePath)) {
+        Write-Host "Error: Settings.toml.example not found. Cannot create settings."
+        exit 1
+    }
+    
+    $Token = Read-Host "Enter your Stratz API token (get one at https://stratz.com/api)"
+    if ([string]::IsNullOrWhiteSpace($Token)) {
+        Write-Host "Token is required. Exiting."
+        exit 1
+    }
+    
+    $AccountId = Read-Host "Enter your OpenDota account ID (32-bit, find it at https://www.opendota.com/players/YOUR_STEAM_ID)"
+    
+    $SettingsContent = Get-Content $SettingsExamplePath -Raw
+    $SettingsContent = $SettingsContent -replace 'stratz_token = ""', "stratz_token = `"$Token`""
+    $SettingsContent = $SettingsContent -replace 'account_id = ""', "account_id = `"$AccountId`""
+    Set-Content -Path $SettingsPath -Value $SettingsContent -Encoding UTF8
+    Write-Host "Settings.toml created."
+}
+
 # Load settings
-$Settings = Read-Settings -Path "$PSScriptRoot\Content\Settings.toml"
+$SettingsPath = "$PSScriptRoot\..\Settings.toml"
+$Settings = Read-Settings -Path $SettingsPath
 $ApiProvider = $Settings.api.provider
 
 # Stratz grid settings
@@ -136,6 +166,11 @@ $RoleY = $RoleGrid.y
 $RoleXOffset = $RoleGrid.x_offset
 $SteamPath = $Settings.steam.steam_path
 $ConfigFileName = "hero_grid_config.json"
+
+# OpenDota settings
+$OpenDota = $Settings.opendota
+$OpenDotaAccountId = $OpenDota.account_id
+$OpenDotaMatchLimit = [int]$OpenDota.match_limit
 
 Write-Host "=== DotaGrider ==="
 Write-Host "API Provider: $ApiProvider"
@@ -216,6 +251,47 @@ foreach ($row in $RawStats) {
 }
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
+# Fetch recent match history from OpenDota
+$RecentConfig = $null
+if ($OpenDotaAccountId) {
+    try {
+        $Matches = Get-OpenDotaMatches -AccountId $OpenDotaAccountId -Limit $OpenDotaMatchLimit
+        $HeroMap = Get-HeroMap
+        
+        $RecentHeroIds = @()
+        foreach ($match in $Matches) {
+            if ($match.hero_id -and $HeroMap."$($match.hero_id)") {
+                $RecentHeroIds += [int]$match.hero_id
+            }
+        }
+        
+        if ($RecentHeroIds.Count -gt 0) {
+            $RecentConfig = [PSCustomObject]@{
+                version = 3
+                configs = @(
+                    [PSCustomObject]@{
+                        config_name = "RECENT"
+                        categories = @(
+                            [PSCustomObject]@{
+                                category_name = "Last $($RecentHeroIds.Count) matches"
+                                x_position = $XOffset
+                                y_position = $InitialY + 5 * $YOffset
+                                width = $Width
+                                height = $Height
+                                hero_ids = $RecentHeroIds
+                            }
+                        )
+                    }
+                )
+            }
+            Write-Host "Recent matches grid: $($RecentHeroIds.Count) heroes"
+        }
+    }
+    catch {
+        Write-Host "Warning: OpenDota recent matches failed: $($_.Exception.Message)"
+    }
+}
+
 # Generate grid configs
 $TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
 $RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -RoleNumbers
@@ -252,8 +328,12 @@ foreach ($ConfigPath in $TargetCfgPaths) {
     }
 
     # Replace existing generated configs
-    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix -and $_.config_name -ne "ROLES" -and $_.config_name -ne "WINRATES" })
+    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix -and $_.config_name -ne "ROLES" -and $_.config_name -ne "WINRATES" -and $_.config_name -ne "RECENT" })
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
+    
+    if ($RecentConfig) {
+        $ExistingConfig.configs = @($ExistingConfig.configs) + @($RecentConfig.configs)
+    }
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
     $json = Format-DotaNumbers -Json $json

@@ -22,7 +22,7 @@ function New-HeroGridConfig {
     $Categories = @()
     
     # Load language file
-    $LangPath = Join-Path $PSScriptRoot "..\Content\Language\$Language.toml"
+    $LangPath = Join-Path $PSScriptRoot "..\Language\$Language.toml"
     $Translations = Read-KeyValueFile -Path $LangPath
     
     # Generate date-based name for first category in OS native language

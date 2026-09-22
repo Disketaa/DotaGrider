@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 function Read-Settings {
     [CmdletBinding()]
     param(
-        [string]$Path = "Content\Settings.toml"
+        [string]$Path = "Settings.toml"
     )
     
     if (-not (Test-Path $Path)) {
