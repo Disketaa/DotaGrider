@@ -7,16 +7,24 @@ function Get-OpenDotaMatches {
     [CmdletBinding()]
     param(
         [string]$AccountId,
-        [int]$Limit = 50
+        [int]$Limit = 100
     )
     
     if (-not $AccountId) {
         throw "OpenDota account_id is required. Add it to Settings.toml under [opendota]."
     }
     
-    Write-Host "Fetching last $Limit matches from OpenDota..."
+    # Extract numeric ID from URL if needed (supports /players/{id} and /profiles/{id64})
+    $numericId = $AccountId
+    if ($AccountId -match '/(\d+)$') {
+        $numericId = $matches[1]
+    } elseif ($AccountId -match '/(\d+)/?$') {
+        $numericId = $matches[1]
+    }
     
-    $url = "https://api.opendota.com/api/players/$AccountId/matches?limit=$Limit"
+    Write-Host "Fetching last $Limit matches from OpenDota (account: $numericId)..."
+    
+    $url = "https://api.opendota.com/api/players/$numericId/matches?limit=$Limit"
     
     try {
         $response = Invoke-RestMethod -Uri $url -Method Get -ErrorAction Stop

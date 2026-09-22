@@ -1,4 +1,7 @@
-param([string]$Token)
+param(
+    [string]$Token,
+    [string]$AccountId
+)
 
 $lines = @(
     '# DotaGrider Settings',
@@ -18,6 +21,10 @@ $lines = @(
     'width = 750',
     'height = 100',
     'max_heroes = 10',
+    '',
+    '[opendota]',
+    "account_id = `"$AccountId`"",
+    'match_limit = 100',
     '',
     '[role_grid]',
     'y = 62',

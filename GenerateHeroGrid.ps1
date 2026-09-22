@@ -109,17 +109,11 @@ function Format-Json {
 }
 
 # Load settings or prompt for first-run setup
-$SettingsPath = "$PSScriptRoot\Content\Settings.toml"
-$SettingsExamplePath = "$PSScriptRoot\Content\Settings.toml.example"
+$SettingsPath = "$PSScriptRoot\..\Settings.toml"
 
 if (-not (Test-Path $SettingsPath)) {
     Write-Host "=== First Run Setup ==="
     Write-Host "Settings.toml not found. Creating from template."
-    
-    if (-not (Test-Path $SettingsExamplePath)) {
-        Write-Host "Error: Settings.toml.example not found. Cannot create settings."
-        exit 1
-    }
     
     $Token = Read-Host "Enter your Stratz API token (get one at https://stratz.com/api)"
     if ([string]::IsNullOrWhiteSpace($Token)) {
@@ -127,11 +121,45 @@ if (-not (Test-Path $SettingsPath)) {
         exit 1
     }
     
-    $AccountId = Read-Host "Enter your OpenDota account ID (32-bit, find it at https://www.opendota.com/players/YOUR_STEAM_ID)"
+    $AccountId = Read-Host "Enter your OpenDota account ID or profile URL (e.g. https://www.opendota.com/players/291971540)"
     
-    $SettingsContent = Get-Content $SettingsExamplePath -Raw
-    $SettingsContent = $SettingsContent -replace 'stratz_token = ""', "stratz_token = `"$Token`""
-    $SettingsContent = $SettingsContent -replace 'account_id = ""', "account_id = `"$AccountId`""
+    $SettingsContent = @"
+# DotaGrider Settings
+language = "Russian"
+
+[api]
+provider = "stratz"
+stratz_token = "$Token"
+stratz_bracket = "DIVINE"
+stratz_weeks_back = 1
+
+[stratz_grid]
+config_prefix = "STRATZ"
+y = 0
+x_offset = 20
+y_offset = 110
+width = 750
+height = 100
+max_heroes = 10
+
+[opendota]
+account_id = "$AccountId"
+match_limit = 100
+
+[role_grid]
+y = 62
+x_offset = 0
+y_offset = 110
+
+[winrate_grid]
+separator = "    "
+y = 115
+x_offset = 34
+y_offset = 110
+
+[steam]
+steam_path = "C:\\Program Files (x86)\\Steam"
+"@
     Set-Content -Path $SettingsPath -Value $SettingsContent -Encoding UTF8
     Write-Host "Settings.toml created."
 }
@@ -252,39 +280,55 @@ foreach ($row in $RawStats) {
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
 
 # Fetch recent match history from OpenDota
-$RecentConfig = $null
+$RecentPositionCategories = @()
 if ($OpenDotaAccountId) {
     try {
         $Matches = Get-OpenDotaMatches -AccountId $OpenDotaAccountId -Limit $OpenDotaMatchLimit
         $HeroMap = Get-HeroMap
         
-        $RecentHeroIds = @()
+        # Group heroes by position from recent matches
+        $PositionHeroes = @{}
         foreach ($match in $Matches) {
-            if ($match.hero_id -and $HeroMap."$($match.hero_id)") {
-                $RecentHeroIds += [int]$match.hero_id
+            $lane = $match.lane
+            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) { continue }
+            if (-not $match.hero_id -or -not $HeroMap."$($match.hero_id)") { continue }
+            
+            if (-not $PositionHeroes[$lane]) {
+                $PositionHeroes[$lane] = [System.Collections.Generic.List[int]]::new()
+            }
+            $PositionHeroes[$lane].Add([int]$match.hero_id)
+        }
+        
+        # Create categories for positions 1-5 (skip if no data)
+        for ($pos = 1; $pos -le 5; $pos++) {
+            if (-not $PositionHeroes[$pos]) { continue }
+            
+            # Dedup preserving most-recent-first order
+            $seen = [System.Collections.Generic.HashSet[int]]::new()
+            $orderedHeroIds = @()
+            foreach ($id in $PositionHeroes[$pos]) {
+                if ($seen.Add($id)) {
+                    $orderedHeroIds += $id
+                }
+            }
+            
+            # Truncate to max_heroes = 6
+            if ($orderedHeroIds.Count -gt 6) {
+                $orderedHeroIds = $orderedHeroIds | Select-Object -First 6
+            }
+            
+            $RecentPositionCategories += [PSCustomObject]@{
+                category_name = "$pos|"
+                x_position = 720
+                y_position = $InitialY + 5 * $YOffset + ($pos - 1) * $YOffset
+                width = $Width
+                height = $Height
+                hero_ids = $orderedHeroIds
             }
         }
         
-        if ($RecentHeroIds.Count -gt 0) {
-            $RecentConfig = [PSCustomObject]@{
-                version = 3
-                configs = @(
-                    [PSCustomObject]@{
-                        config_name = "RECENT"
-                        categories = @(
-                            [PSCustomObject]@{
-                                category_name = "Last $($RecentHeroIds.Count) matches"
-                                x_position = $XOffset
-                                y_position = $InitialY + 5 * $YOffset
-                                width = $Width
-                                height = $Height
-                                hero_ids = $RecentHeroIds
-                            }
-                        )
-                    }
-                )
-            }
-            Write-Host "Recent matches grid: $($RecentHeroIds.Count) heroes"
+        if ($RecentPositionCategories.Count -gt 0) {
+            Write-Host "Recent matches: added $($RecentPositionCategories.Count) position categories"
         }
     }
     catch {
@@ -300,6 +344,7 @@ $WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Of
 # Append categories to STRATZ config
 $TopConfig.configs[0].categories += $RoleCategories.configs[0].categories
 $TopConfig.configs[0].categories += $WinrateCategories.configs[0].categories
+$TopConfig.configs[0].categories += $RecentPositionCategories
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {
@@ -328,12 +373,8 @@ foreach ($ConfigPath in $TargetCfgPaths) {
     }
 
     # Replace existing generated configs
-    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix -and $_.config_name -ne "ROLES" -and $_.config_name -ne "WINRATES" -and $_.config_name -ne "RECENT" })
+    $ExistingConfig.configs = @($ExistingConfig.configs | Where-Object { $_.config_name -ne $ConfigPrefix -and $_.config_name -ne "ROLES" -and $_.config_name -ne "WINRATES" })
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
-    
-    if ($RecentConfig) {
-        $ExistingConfig.configs = @($ExistingConfig.configs) + @($RecentConfig.configs)
-    }
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
     $json = Format-DotaNumbers -Json $json
