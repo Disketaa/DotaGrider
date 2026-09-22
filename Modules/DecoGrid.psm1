@@ -28,15 +28,13 @@ function New-DecoratorGrid {
             $Field = $Info.Field
             $WinField = $Field -replace "_match$", "_win"
             
-            $HeroesWithData = $Heroes | Where-Object { $_.($Field) -gt 0 } | ForEach-Object {
+            # Use same hero order as HeroGrid (sorted by winrate descending)
+            $SortedHeroes = $Heroes | Where-Object { $_.($Field) -gt 0 } | Sort-Object { 
                 $matchCount = $_.($Field)
                 $wins = $_.($WinField)
-                $wrExact = if ($matchCount -gt 0) { ($wins / $matchCount) * 100 } else { 0 }
-                $wr = [math]::Round($wrExact, 0)
-                $_ | Add-Member -NotePropertyName Winrate -NotePropertyValue $wr -Force
-                $_ | Add-Member -NotePropertyName WinrateExact -NotePropertyValue $wrExact -PassThru -Force
-            } | Sort-Object { $_.WinrateExact } -Descending
-            $TopHeroes = $HeroesWithData | Select-Object -First $Count
+                if ($matchCount -gt 0) { ($wins / $matchCount) * 100 } else { 0 }
+            } -Descending
+            $TopHeroes = $SortedHeroes | Select-Object -First $Count
             
             $WinrateStrings = @()
             foreach ($hero in $TopHeroes) {

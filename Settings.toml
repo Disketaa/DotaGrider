@@ -4,8 +4,8 @@ language = "Russian"
 [api]
 provider = "stratz"
 stratz_bracket = "DIVINE"
-stratz_weeks_back = 1
-recent_match_limit = 25
+stratz_weeks_back = 8
+recent_match_limit = 50
 
 [stratz_grid]
 config_prefix = "STRATZ"

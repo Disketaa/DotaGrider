@@ -28,7 +28,15 @@ function New-HeroGridConfig {
     
     foreach ($Pos in 1..5) {
         $Info = $PositionFields[$Pos]
-        $SortedHeroes = $Heroes | Where-Object { $_.($Info.Field) -gt 1000 } | Sort-Object { $_.($Info.Field) } -Descending
+        $Field = $Info.Field
+        $WinField = $Field -replace "_match$", "_win"
+        
+        # Sort by winrate descending (min 1000 matches)
+        $SortedHeroes = $Heroes | Where-Object { $_.($Field) -gt 1000 } | Sort-Object { 
+            $matchCount = $_.($Field)
+            $wins = $_.($WinField)
+            if ($matchCount -gt 0) { ($wins / $matchCount) * 100 } else { 0 }
+        } -Descending
         $TopHeroes = $SortedHeroes | Select-Object -First $MaxHeroes
         
         $TopIds = @($TopHeroes.id)

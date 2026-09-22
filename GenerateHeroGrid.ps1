@@ -181,11 +181,11 @@ $SteamPath = $Settings.steam.steam_path
 $ConfigFileName = "hero_grid_config.json"
 
 # STRATZ account settings
-$RecentMatchLimit = 20
+$RecentMatchLimit = if ($Settings.api.recent_match_limit) { [int]$Settings.api.recent_match_limit } else { 25 }
 
 # Recent grid settings
 $RecentGrid = $Settings.recent_grid
-$RecentXOffset = if ($RecentGrid -and $RecentGrid.x_offset) { [int]$RecentGrid.x_offset } else { 720 }
+$RecentXOffset = if ($RecentGrid -and $RecentGrid.x_offset) { [int]$RecentGrid.x_offset } else { 620 }
 $RecentYOffset = if ($RecentGrid -and $RecentGrid.y_offset) { [int]$RecentGrid.y_offset } else { $YOffset }
 $RecentWidth = if ($RecentGrid -and $RecentGrid.width) { [int]$RecentGrid.width } else { $Width }
 $RecentHeight = if ($RecentGrid -and $RecentGrid.height) { [int]$RecentGrid.height } else { $Height }
@@ -278,8 +278,12 @@ foreach ($row in $RawStats) {
         }
     }
     $pos = $row.position
+    $posMatch = $null
     if ($pos -match 'POSITION_(\d)') {
-        $posNum = [int]$matches[1]
+        $posMatch = $matches[1]
+    }
+    if ($posMatch) {
+        $posNum = [int]$posMatch
         $matchField = "${posNum}_match"
         $winField = "${posNum}_win"
         $Heroes[$heroId][$matchField] = $row.matchCount
@@ -310,7 +314,6 @@ foreach ($hero in $Heroes) {
 }
 
 # Fetch recent match history from STRATZ
-$RecentPositionCategories = @()
 if ($StratzAccountId) {
     try {
         $RecentMatches = Get-StratzPlayerMatches -Token $StratzToken -SteamAccountId $StratzAccountId -Take $RecentMatchLimit
@@ -324,10 +327,14 @@ if ($StratzAccountId) {
             
             # Normalize position to 1-5
             $posNum = $null
+            $posMatch = $null
             if ($position -match 'POSITION_(\d)') {
-                $posNum = [int]$matches[1]
+                $posMatch = $matches[1]
             } elseif ($position -match '^\d$') {
                 $posNum = [int]$position
+            }
+            if ($posMatch) {
+                $posNum = [int]$posMatch
             }
             if (-not $posNum -or $posNum -lt 1 -or $posNum -gt 5) { continue }
             
@@ -380,23 +387,26 @@ if ($StratzAccountId) {
                 $RecentHeroCategories[$pos] = [PSCustomObject]@{
                     category_name = $CategoryName
                     x_position = $RecentXOffset
-                    y_position = $InitialY + ($pos - 1) * $YOffset
+                    y_position = $InitialY + ($pos - 1) * $RecentYOffset
                     width = $RecentWidth
                     height = $RecentHeight
                     hero_ids = $recentHeroIds
                 }
                 
-                # Winrate label category
+                # Winrate label category (use same position-specific winrate as meta grid)
                 $winField = "${pos}_win"
+                $matchField = "${pos}_match"
                 $WinrateStrings = @()
                 foreach ($id in $recentHeroIds) {
-                    $h = $Heroes | Where-Object { $_.id -eq $id } | Select-Object -First 1
+                    $h = $Heroes | Where-Object { $_.id -eq $id -and $_.($matchField) -gt 0 } | Select-Object -First 1
                     if ($h -and $h.$winField -and $h.$matchField -and $h.$matchField -gt 0) {
                         $wrExact = ($h.$winField / $h.$matchField) * 100
                         $wr = [math]::Round($wrExact, 0)
                         $WinrateStrings += "$wr%"
+                    } elseif ($HeroWinrates[$id]) {
+                        $WinrateStrings += "$($HeroWinrates[$id])%"
                     } else {
-                        $WinrateStrings += "0%"
+                        $WinrateStrings += "N/A"
                     }
                 }
                 
@@ -410,10 +420,6 @@ if ($StratzAccountId) {
                     hero_ids = @()
                 }
             }
-        }
-        
-        if ($RecentPositionCategories.Count -gt 0) {
-            Write-Host "Recent matches: added $($RecentPositionCategories.Count) position categories"
         }
     }
     catch {
