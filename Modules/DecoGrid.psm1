@@ -15,10 +15,25 @@ function New-DecoratorGrid {
         [hashtable]$PositionFields,
         [int]$Count = 10,
         [string]$WinrateSeparator = " ",
-        [switch]$RoleNumbers
+        [switch]$RoleNumbers,
+        [int]$PickRateMinimum = 0,
+        [int]$MinMatches = 0
     )
     
     $Categories = @()
+    
+    # Calculate total matches per hero across all positions for pick rate filtering
+    $HeroTotals = @{}
+    foreach ($Pos in 1..5) {
+        $field = $PositionFields[$Pos].Field
+        foreach ($hero in $Heroes) {
+            $heroId = $hero.id
+            if (-not $HeroTotals[$heroId]) {
+                $HeroTotals[$heroId] = 0
+            }
+            $HeroTotals[$heroId] += $hero.$field
+        }
+    }
     
     foreach ($Pos in 1..5) {
         if ($RoleNumbers) {
@@ -28,8 +43,23 @@ function New-DecoratorGrid {
             $Field = $Info.Field
             $WinField = $Field -replace "_match$", "_win"
             
-            # Use same hero order as HeroGrid (sorted by winrate descending)
-            $SortedHeroes = $Heroes | Where-Object { $_.($Field) -gt 0 } | Sort-Object { 
+            # Use same hero order as HeroGrid (sorted by winrate descending, filtered by pick rate)
+            $SortedHeroes = $Heroes | Where-Object { 
+                $matchCount = $_.($Field)
+                $passesMinMatches = $matchCount -gt $MinMatches
+                $passesPickRate = $true
+                if ($PickRateMinimum -gt 0) {
+                    $heroId = $_.id
+                    $heroTotal = $HeroTotals[$heroId]
+                    if ($heroTotal -gt 0) {
+                        $pickRate = ($matchCount / $heroTotal) * 100
+                        $passesPickRate = $pickRate -ge $PickRateMinimum
+                    } else {
+                        $passesPickRate = $false
+                    }
+                }
+                $passesMinMatches -and $passesPickRate
+            } | Sort-Object { 
                 $matchCount = $_.($Field)
                 $wins = $_.($WinField)
                 if ($matchCount -gt 0) { ($wins / $matchCount) * 100 } else { 0 }
@@ -45,10 +75,6 @@ function New-DecoratorGrid {
             }
             
 
-            
-            while ($WinrateStrings.Count -lt $Count) {
-                $WinrateStrings += "0%"
-            }
             
             $CategoryName = $WinrateStrings -join $WinrateSeparator
         }

@@ -159,6 +159,8 @@ $InitialY = $StratzGrid.y
 $XOffset = $StratzGrid.x_offset
 $ConfigPrefix = $StratzGrid.config_prefix
 $Language = $Settings.language
+$PickRateMinimum = if ($StratzGrid.pick_rate_minimum) { [int]$StratzGrid.pick_rate_minimum } else { 0 }
+$MinMatches = if ($StratzGrid.min_matches) { [int]$StratzGrid.min_matches } else { 200 }
 
 # Load language translations
 $LangPath = Join-Path $PSScriptRoot "Language\$Language.toml"
@@ -428,9 +430,9 @@ if ($StratzAccountId) {
 }
 
 # Generate grid configs
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -PickRateMinimum $PickRateMinimum -MinMatches $MinMatches
 $RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -RoleNumbers
-$WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
+$WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator -PickRateMinimum $PickRateMinimum -MinMatches $MinMatches
 
 # Append categories to STRATZ config in exact order:
 # 1. META HEROES

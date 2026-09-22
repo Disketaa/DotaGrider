@@ -4,7 +4,7 @@ language = "Russian"
 [api]
 provider = "stratz"
 stratz_bracket = "DIVINE"
-stratz_weeks_back = 8
+stratz_weeks_back = 5
 recent_match_limit = 50
 
 [stratz_grid]
@@ -15,6 +15,8 @@ y_offset = 110
 width = 750
 height = 100
 max_heroes = 10
+pick_rate_minimum = 30
+min_matches = 400
 
 [recent_grid]
 x_offset = 620
