@@ -46,6 +46,6 @@ $lines = @(
     'steam_path = "C:\\Program Files (x86)\\Steam"'
 )
 
-$settingsPath = Join-Path $PSScriptRoot "..\Settings.toml"
+$settingsPath = Join-Path $PSScriptRoot "Settings.toml"
 [System.IO.File]::WriteAllLines($settingsPath, $lines, [System.Text.UTF8Encoding]::new($false))
 Write-Host "Settings.toml created."

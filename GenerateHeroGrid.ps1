@@ -107,9 +107,9 @@ function Format-Json {
     }
     return $result
 }
-
 # Load settings or prompt for first-run setup
-$SettingsPath = "$PSScriptRoot\..\Settings.toml"
+
+$SettingsPath = "$PSScriptRoot\Settings.toml"
 
 if (-not (Test-Path $SettingsPath)) {
     Write-Host "=== First Run Setup ==="
@@ -148,6 +148,7 @@ match_limit = 100
 
 [recent_grid]
 x_offset = 720
+width = 750
 max_heroes = 6
 
 [role_grid]
@@ -167,9 +168,9 @@ steam_path = "C:\\Program Files (x86)\\Steam"
     Set-Content -Path $SettingsPath -Value $SettingsContent -Encoding UTF8
     Write-Host "Settings.toml created."
 }
-
 # Load settings
-$SettingsPath = "$PSScriptRoot\..\Settings.toml"
+
+$SettingsPath = "$PSScriptRoot\Settings.toml"
 $Settings = Read-Settings -Path $SettingsPath
 $ApiProvider = $Settings.api.provider
 
@@ -183,6 +184,11 @@ $InitialY = $StratzGrid.y
 $XOffset = $StratzGrid.x_offset
 $ConfigPrefix = $StratzGrid.config_prefix
 $Language = $Settings.language
+
+# Load language translations
+$LangPath = Join-Path $PSScriptRoot "Language\$Language.toml"
+$Translations = Read-KeyValueFile -Path $LangPath
+$RecentHeroesLabel = $Translations["Recent Heroes"]
 
 # Winrate grid settings
 $WinrateGrid = $Settings.winrate_grid
@@ -272,7 +278,7 @@ $HeroWinrates = @{}
 foreach ($row in $WinrateRows) {
     if ($row.heroId -and $row.matchCount -gt 0) {
         $wrExact = ($row.winCount / $row.matchCount) * 100
-        $HeroWinrates[$row.heroId] = [math]::Round($wrExact, 1)
+        $HeroWinrates[$row.heroId] = [math]::Round($wrExact)
     }
 }
 
@@ -367,6 +373,11 @@ if ($OpenDotaAccountId) {
                 }
             }
             
+            if ($heroId -eq 123) {
+                Write-Host "DEBUG hero 123: match_id=$($match.match_id) lane=$($player.lane) position_est=$($player.position_est) final_lane=$lane"
+                Write-Host "DEBUG hero 123: player keys: $($player.PSObject.Properties.Name -join ', ')"
+            }
+            
             if (-not $LaneHeroes[$lane]) {
                 $LaneHeroes[$lane] = [System.Collections.Generic.List[int]]::new()
             }
@@ -381,17 +392,24 @@ if ($OpenDotaAccountId) {
             }
         }
         
-        # Create categories for positions 1-5 (empty if no data)
+        # Create categories for positions 1-5 (skip empty)
         for ($pos = 1; $pos -le 5; $pos++) {
             $orderedHeroIds = @()
             if ($LaneHeroes[$pos]) {
-                # Dedup preserving most-recent-first order
+                # Dedup and sort by Stratz match count for this position (descending)
                 $seen = [System.Collections.Generic.HashSet[int]]::new()
+                $uniqueIds = @()
                 foreach ($id in $LaneHeroes[$pos]) {
                     if ($seen.Add($id)) {
-                        $orderedHeroIds += $id
+                        $uniqueIds += $id
                     }
                 }
+                $matchField = "${pos}_match"
+                $orderedHeroIds = $uniqueIds | Sort-Object { 
+                    $id = $_
+                    $h = $Heroes | Where-Object { $_.id -eq $id } | Select-Object -First 1
+                    if ($h -and $h.$matchField) { $h.$matchField } else { 0 }
+                } -Descending
                 
                 # Truncate to max_heroes
                 if ($orderedHeroIds.Count -gt $RecentMaxHeroes) {
@@ -399,13 +417,15 @@ if ($OpenDotaAccountId) {
                 }
             }
             
-            $RecentPositionCategories += [PSCustomObject]@{
-                category_name = ""
-                x_position = $RecentXOffset
-                y_position = $(if ($pos -eq 1) { $InitialY } else { ($pos - 1) * $YOffset })
-                width = $RecentWidth
-                height = $Height
-                hero_ids = $orderedHeroIds
+            if ($orderedHeroIds.Count -gt 0) {
+                $RecentPositionCategories += [PSCustomObject]@{
+                    category_name = $(if ($pos -eq 1) { $RecentHeroesLabel } else { "" })
+                    x_position = $RecentXOffset
+                    y_position = $(if ($pos -eq 1) { $InitialY } else { ($pos - 1) * $YOffset })
+                    width = $RecentWidth
+                    height = $Height
+                    hero_ids = $orderedHeroIds
+                }
             }
         }
         
