@@ -14,16 +14,11 @@ function New-HeroGridConfig {
         [int]$YOffset,
         [int]$Y,
         [int]$XOffset = 0,
-        [string]$ConfigPrefix,
-        [string]$Language = "en"
+        [string]$ConfigPrefix
     )
     
     $GridConfigName = $ConfigPrefix
     $Categories = @()
-    
-    # Load language file
-    $LangPath = Join-Path $PSScriptRoot "..\Language\$Language.toml"
-    $Translations = Read-KeyValueFile -Path $LangPath
     
     # Generate date-based name for first category in OS native language
     $Now = Get-Date

@@ -11,7 +11,7 @@ if not exist "Settings.toml" (
         pause
         exit /b 1
     )
-    set /p account_id="Enter your OpenDota account ID (32-bit, find it at https://www.opendota.com/players/YOUR_STEAM_ID): "
+    set /p account_id="Enter your Steam account ID (32-bit, find it at https://www.stratz.com/player/YOUR_STEAM_ID): "
     powershell -ExecutionPolicy Bypass -NoProfile -File "Modules\SetupSettings.ps1" -Token "!token!" -AccountId "!account_id!"
     echo Settings.toml created.
 )

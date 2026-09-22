@@ -9,7 +9,6 @@ Import-Module "$PSScriptRoot\Modules\Steam.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\DecoGrid.psm1" -Force
-Import-Module "$PSScriptRoot\Modules\OpenDota.psm1" -Force
 
 function Format-DotaNumbers {
     param([string]$Json)
@@ -121,7 +120,7 @@ if (-not (Test-Path $SettingsPath)) {
         exit 1
     }
     
-    $AccountId = Read-Host "Enter your OpenDota account ID or profile URL (e.g. https://www.opendota.com/players/291971540)"
+    $AccountId = Read-Host "Enter your Steam account ID (32-bit, find it at https://www.stratz.com/player/YOUR_STEAM_ID)"
     
     $SettingsContent = @"
 # DotaGrider Settings
@@ -132,6 +131,7 @@ provider = "stratz"
 stratz_token = "$Token"
 stratz_bracket = "DIVINE"
 stratz_weeks_back = 1
+stratz_account_id = "$AccountId"
 
 [stratz_grid]
 config_prefix = "STRATZ"
@@ -141,10 +141,6 @@ y_offset = 110
 width = 750
 height = 100
 max_heroes = 10
-
-[opendota]
-account_id = "$AccountId"
-match_limit = 100
 
 [recent_grid]
 x_offset = 720
@@ -205,16 +201,9 @@ $RoleXOffset = $RoleGrid.x_offset
 $SteamPath = $Settings.steam.steam_path
 $ConfigFileName = "hero_grid_config.json"
 
-# OpenDota settings
-$OpenDota = $Settings.opendota
-$OpenDotaAccountIdRaw = $OpenDota.account_id
-$OpenDotaMatchLimit = 20
-
-# Extract numeric ID from URL if needed
-$OpenDotaAccountId = $OpenDotaAccountIdRaw
-if ($OpenDotaAccountIdRaw -match '/(\d+)/?$') {
-    $OpenDotaAccountId = [long]$matches[1]
-}
+# STRATZ account settings
+$StratzAccountId = $Settings.api.stratz_account_id
+$RecentMatchLimit = 20
 
 # Recent grid settings
 $RecentGrid = $Settings.recent_grid
@@ -335,55 +324,35 @@ foreach ($hero in $Heroes) {
     $HeroBestPosition[$hero.id] = $bestPos
 }
 
-# Fetch recent match history from OpenDota
+# Fetch recent match history from STRATZ
 $RecentPositionCategories = @()
-if ($OpenDotaAccountId) {
+if ($StratzAccountId) {
     try {
-        $Matches = Get-OpenDotaMatches -AccountId $OpenDotaAccountId -Limit $OpenDotaMatchLimit
-        $HeroMap = Get-HeroMap
+        $Matches = Get-StratzPlayerMatches -Token $StratzToken -SteamAccountId $StratzAccountId -Take $RecentMatchLimit
         
-        # Fetch match details to get lane data (summary doesn't include lane)
         $LaneHeroes = @{}
-        $detailCount = 0
-        $matchDetailDelay = 0.25  # seconds between match detail requests
         foreach ($match in $Matches) {
-            if (-not $match.match_id -or -not $match.hero_id) { continue }
-            Start-Sleep -Seconds $matchDetailDelay
-            $detail = Get-OpenDotaMatchDetail -MatchId $match.match_id
-            if (-not $detail -or -not $detail.players) { continue }
-            $detailCount++
+            if (-not $match.heroId -or -not $match.position) { continue }
             
-            # Find current player in match details
-            $player = $detail.players | Where-Object { $_.account_id -eq $OpenDotaAccountId } | Select-Object -First 1
-            if (-not $player) { continue }
+            $heroId = [int]$match.heroId
+            $position = $match.position
             
-            $heroId = [int]$match.hero_id
-            if (-not $HeroMap."$heroId") { continue }
-            
-            $lane = $player.lane
-            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) {
-                $lane = $player.position_est
+            # Normalize position to 1-5
+            $posNum = $null
+            if ($position -match 'POSITION_(\d)') {
+                $posNum = [int]$matches[1]
+            } elseif ($position -match '^\d$') {
+                $posNum = [int]$position
             }
-            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) {
-                # Fallback to Stratz best position when OpenDota lacks lane data
-                if ($HeroBestPosition[$heroId]) {
-                    $lane = $HeroBestPosition[$heroId]
-                } else {
-                    continue
-                }
-            }
+            if (-not $posNum -or $posNum -lt 1 -or $posNum -gt 5) { continue }
             
-            if ($heroId -eq 123) {
-                Write-Host "DEBUG hero 123: match_id=$($match.match_id) lane=$($player.lane) position_est=$($player.position_est) final_lane=$lane"
-                Write-Host "DEBUG hero 123: player keys: $($player.PSObject.Properties.Name -join ', ')"
+            if (-not $LaneHeroes[$posNum]) {
+                $LaneHeroes[$posNum] = [System.Collections.Generic.List[int]]::new()
             }
-            
-            if (-not $LaneHeroes[$lane]) {
-                $LaneHeroes[$lane] = [System.Collections.Generic.List[int]]::new()
-            }
-            $LaneHeroes[$lane].Add($heroId)
+            $LaneHeroes[$posNum].Add($heroId)
         }
-        Write-Host "Fetched details for $detailCount matches"
+        
+        Write-Host "Fetched $($Matches.Count) recent matches from STRATZ"
         foreach ($pos in 1..5) {
             if ($LaneHeroes[$pos]) {
                 Write-Host "Position $pos : $($LaneHeroes[$pos].Count) heroes"
@@ -434,12 +403,12 @@ if ($OpenDotaAccountId) {
         }
     }
     catch {
-        Write-Host "Warning: OpenDota recent matches failed: $($_.Exception.Message)"
+        Write-Host "Warning: STRATZ recent matches failed: $($_.Exception.Message)"
     }
 }
 
 # Generate grid configs
-$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix -Language $Language
+$TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields -MaxHeroes $MaxHeroes -Width $Width -Height $Height -YOffset $YOffset -Y $InitialY -XOffset $XOffset -ConfigPrefix $ConfigPrefix
 $RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -RoleNumbers
 $WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
 

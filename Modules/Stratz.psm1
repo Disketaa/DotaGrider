@@ -17,12 +17,6 @@ function Get-StratzHeroStats {
     
     Write-Host "Fetching hero stats from Stratz..."
     
-    $headers = @{
-        "Authorization" = "Bearer $Token"
-        "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        "Accept" = "application/json"
-    }
-    
     $bracketList = if ($Bracket -eq "DIVINE_IMMORTAL") { "DIVINE, IMMORTAL" } else { $Bracket }
     
     $allRows = @()
@@ -102,8 +96,9 @@ query PositionStats {
     foreach ($row in $allRows) {
         $heroId = $row.heroId
         $pos = $row.position
-        if ($pos -notmatch 'POSITION_(\d)') { continue }
-        $posNum = [int]$matches[1]
+        $posMatch = [regex]::Match($pos, '^POSITION_(\d)$')
+        if (-not $posMatch.Success) { continue }
+        $posNum = [int]$posMatch.Groups[1].Value
         $key = "$heroId|$posNum"
         
         if (-not $aggregated[$key]) {
@@ -135,12 +130,6 @@ function Get-StratzHeroWinrate {
     }
     
     Write-Host "Fetching current hero winrates from Stratz..."
-    
-    $headers = @{
-        "Authorization" = "Bearer $Token"
-        "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        "Accept" = "application/json"
-    }
     
     $bracketList = if ($Bracket -eq "DIVINE_IMMORTAL") { "DIVINE, IMMORTAL" } else { $Bracket }
     
@@ -216,12 +205,6 @@ function Get-StratzPlayerMatches {
     
     Write-Host "Fetching recent matches from Stratz (account: $SteamAccountId)..."
     
-    $headers = @{
-        "Authorization" = "Bearer $Token"
-        "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        "Accept" = "application/json"
-    }
-    
     $query = @'
 query PlayerMatches($steamAccountId: Long!, $take: Int) {
   player(steamAccountId: $steamAccountId) {
@@ -279,10 +262,10 @@ query PlayerMatches($steamAccountId: Long!, $take: Int) {
             throw "Stratz GraphQL errors: $errorMsg"
         }
         
-        $matches = $response.data.player.matches
-        if ($matches) {
-            Write-Host "Fetched $($matches.Count) matches from Stratz"
-            return $matches
+        $playerMatches = $response.data.player.matches
+        if ($playerMatches) {
+            Write-Host "Fetched $($playerMatches.Count) matches from Stratz"
+            return $playerMatches
         } else {
             Write-Host "No matches returned from Stratz"
             return @()
