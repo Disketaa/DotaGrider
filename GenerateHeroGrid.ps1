@@ -146,6 +146,10 @@ max_heroes = 10
 account_id = "$AccountId"
 match_limit = 100
 
+[recent_grid]
+x_offset = 720
+max_heroes = 6
+
 [role_grid]
 y = 62
 x_offset = 0
@@ -197,8 +201,22 @@ $ConfigFileName = "hero_grid_config.json"
 
 # OpenDota settings
 $OpenDota = $Settings.opendota
-$OpenDotaAccountId = $OpenDota.account_id
-$OpenDotaMatchLimit = [int]$OpenDota.match_limit
+$OpenDotaAccountIdRaw = $OpenDota.account_id
+$OpenDotaMatchLimit = 20
+
+# Extract numeric ID from URL if needed
+$OpenDotaAccountId = $OpenDotaAccountIdRaw
+if ($OpenDotaAccountIdRaw -match '/(\d+)/?$') {
+    $OpenDotaAccountId = [long]$matches[1]
+}
+
+# Recent grid settings
+$RecentGrid = $Settings.recent_grid
+$RecentXOffset = if ($RecentGrid -and $RecentGrid.x_offset) { [int]$RecentGrid.x_offset } else { 720 }
+$RecentWidth = if ($RecentGrid -and $RecentGrid.width) { [int]$RecentGrid.width } else { 750 }
+$RecentMaxHeroes = if ($RecentGrid -and $RecentGrid.max_heroes) { [int]$RecentGrid.max_heroes } else { 6 }
+Write-Host "Recent grid settings: x_offset=$RecentXOffset width=$RecentWidth max_heroes=$RecentMaxHeroes"
+Write-Host "Recent grid: x=$RecentXOffset width=$RecentWidth max=$RecentMaxHeroes"
 
 Write-Host "=== DotaGrider ==="
 Write-Host "API Provider: $ApiProvider"
@@ -248,6 +266,16 @@ $StratzBracket = $Settings.api.stratz_bracket
 $StratzWeeksBack = $Settings.api.stratz_weeks_back
 $RawStats = Get-StratzHeroStats -Token $StratzToken -Bracket $StratzBracket -WeeksBack $StratzWeeksBack
 
+# Fetch current winrates from Stratz
+$WinrateRows = Get-StratzHeroWinrate -Token $StratzToken -Bracket $StratzBracket
+$HeroWinrates = @{}
+foreach ($row in $WinrateRows) {
+    if ($row.heroId -and $row.matchCount -gt 0) {
+        $wrExact = ($row.winCount / $row.matchCount) * 100
+        $HeroWinrates[$row.heroId] = [math]::Round($wrExact, 1)
+    }
+}
+
 # Transform Stratz data to match internal format
 $Heroes = @{}
 foreach ($row in $RawStats) {
@@ -266,6 +294,7 @@ foreach ($row in $RawStats) {
             "4_win" = 0
             "5_match" = 0
             "5_win" = 0
+            winrate = 0
         }
     }
     $pos = $row.position
@@ -277,7 +306,28 @@ foreach ($row in $RawStats) {
         $Heroes[$heroId][$winField] = $row.winCount
     }
 }
+# Set overall winrate from Stratz
+foreach ($heroId in $Heroes.Keys) {
+    if ($HeroWinrates[$heroId]) {
+        $Heroes[$heroId].winrate = $HeroWinrates[$heroId]
+    }
+}
 $Heroes = $Heroes.Values | ForEach-Object { [PSCustomObject]$_ }
+
+# Build hero -> best position lookup from Stratz for fallback
+$HeroBestPosition = @{}
+foreach ($hero in $Heroes) {
+    $bestPos = 1
+    $bestMatches = 0
+    foreach ($pos in 1..5) {
+        $matchField = "${pos}_match"
+        if ($hero.$matchField -gt $bestMatches) {
+            $bestMatches = $hero.$matchField
+            $bestPos = $pos
+        }
+    }
+    $HeroBestPosition[$hero.id] = $bestPos
+}
 
 # Fetch recent match history from OpenDota
 $RecentPositionCategories = @()
@@ -286,42 +336,74 @@ if ($OpenDotaAccountId) {
         $Matches = Get-OpenDotaMatches -AccountId $OpenDotaAccountId -Limit $OpenDotaMatchLimit
         $HeroMap = Get-HeroMap
         
-        # Group heroes by position from recent matches
-        $PositionHeroes = @{}
+        # Fetch match details to get lane data (summary doesn't include lane)
+        $LaneHeroes = @{}
+        $detailCount = 0
+        $matchDetailDelay = 0.25  # seconds between match detail requests
         foreach ($match in $Matches) {
-            $lane = $match.lane
-            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) { continue }
-            if (-not $match.hero_id -or -not $HeroMap."$($match.hero_id)") { continue }
+            if (-not $match.match_id -or -not $match.hero_id) { continue }
+            Start-Sleep -Seconds $matchDetailDelay
+            $detail = Get-OpenDotaMatchDetail -MatchId $match.match_id
+            if (-not $detail -or -not $detail.players) { continue }
+            $detailCount++
             
-            if (-not $PositionHeroes[$lane]) {
-                $PositionHeroes[$lane] = [System.Collections.Generic.List[int]]::new()
+            # Find current player in match details
+            $player = $detail.players | Where-Object { $_.account_id -eq $OpenDotaAccountId } | Select-Object -First 1
+            if (-not $player) { continue }
+            
+            $heroId = [int]$match.hero_id
+            if (-not $HeroMap."$heroId") { continue }
+            
+            $lane = $player.lane
+            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) {
+                $lane = $player.position_est
             }
-            $PositionHeroes[$lane].Add([int]$match.hero_id)
-        }
-        
-        # Create categories for positions 1-5 (skip if no data)
-        for ($pos = 1; $pos -le 5; $pos++) {
-            if (-not $PositionHeroes[$pos]) { continue }
-            
-            # Dedup preserving most-recent-first order
-            $seen = [System.Collections.Generic.HashSet[int]]::new()
-            $orderedHeroIds = @()
-            foreach ($id in $PositionHeroes[$pos]) {
-                if ($seen.Add($id)) {
-                    $orderedHeroIds += $id
+            if (-not $lane -or $lane -lt 1 -or $lane -gt 5) {
+                # Fallback to Stratz best position when OpenDota lacks lane data
+                if ($HeroBestPosition[$heroId]) {
+                    $lane = $HeroBestPosition[$heroId]
+                } else {
+                    continue
                 }
             }
             
-            # Truncate to max_heroes = 6
-            if ($orderedHeroIds.Count -gt 6) {
-                $orderedHeroIds = $orderedHeroIds | Select-Object -First 6
+            if (-not $LaneHeroes[$lane]) {
+                $LaneHeroes[$lane] = [System.Collections.Generic.List[int]]::new()
+            }
+            $LaneHeroes[$lane].Add($heroId)
+        }
+        Write-Host "Fetched details for $detailCount matches"
+        foreach ($pos in 1..5) {
+            if ($LaneHeroes[$pos]) {
+                Write-Host "Position $pos : $($LaneHeroes[$pos].Count) heroes"
+            } else {
+                Write-Host "Position $pos : 0 heroes"
+            }
+        }
+        
+        # Create categories for positions 1-5 (empty if no data)
+        for ($pos = 1; $pos -le 5; $pos++) {
+            $orderedHeroIds = @()
+            if ($LaneHeroes[$pos]) {
+                # Dedup preserving most-recent-first order
+                $seen = [System.Collections.Generic.HashSet[int]]::new()
+                foreach ($id in $LaneHeroes[$pos]) {
+                    if ($seen.Add($id)) {
+                        $orderedHeroIds += $id
+                    }
+                }
+                
+                # Truncate to max_heroes
+                if ($orderedHeroIds.Count -gt $RecentMaxHeroes) {
+                    $orderedHeroIds = $orderedHeroIds | Select-Object -First $RecentMaxHeroes
+                }
             }
             
             $RecentPositionCategories += [PSCustomObject]@{
-                category_name = "$pos|"
-                x_position = 720
-                y_position = $InitialY + 5 * $YOffset + ($pos - 1) * $YOffset
-                width = $Width
+                category_name = ""
+                x_position = $RecentXOffset
+                y_position = $(if ($pos -eq 1) { $InitialY } else { ($pos - 1) * $YOffset })
+                width = $RecentWidth
                 height = $Height
                 hero_ids = $orderedHeroIds
             }

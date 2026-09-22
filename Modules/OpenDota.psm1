@@ -22,18 +22,53 @@ function Get-OpenDotaMatches {
         $numericId = $matches[1]
     }
     
-    Write-Host "Fetching last $Limit matches from OpenDota (account: $numericId)..."
+    Write-Host "Fetching last $Limit matches from OpenDota..."
     
     $url = "https://api.opendota.com/api/players/$numericId/matches?limit=$Limit"
     
     try {
         $response = Invoke-RestMethod -Uri $url -Method Get -ErrorAction Stop
-        Write-Host "Fetched $($response.Count) matches from OpenDota"
         return $response
     }
     catch {
         throw "OpenDota API failed: $($_.Exception.Message)"
     }
+}
+
+function Get-OpenDotaMatchDetail {
+    [CmdletBinding()]
+    param(
+        [string]$MatchId,
+        [int]$RetryCount = 3,
+        [int]$DelaySeconds = 0
+    )
+    
+    if (-not $MatchId) {
+        return $null
+    }
+    
+    $url = "https://api.opendota.com/api/matches/$MatchId"
+    
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        try {
+            $response = Invoke-RestMethod -Uri $url -Method Get -ErrorAction Stop
+            return $response
+        }
+        catch {
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            if ($statusCode -eq 429) {
+                $wait = $DelaySeconds
+                Write-Host "Rate limited on match $MatchId, waiting ${wait}s (attempt $attempt/$RetryCount)"
+                Start-Sleep -Seconds $wait
+                $DelaySeconds *= 2
+            }
+            else {
+                return $null
+            }
+        }
+    }
+    
+    return $null
 }
 
 function Get-HeroMap {
@@ -42,18 +77,16 @@ function Get-HeroMap {
         [string]$CachePath = "$PSScriptRoot\..\Content\heroes.json"
     )
     
-    $cacheFile = Resolve-Path $CachePath -ErrorAction SilentlyContinue
-    
     # Use cache if fresh (less than 7 days old)
-    if ($cacheFile) {
+    if (Test-Path $CachePath) {
+        $cacheFile = Get-Item $CachePath
         $age = (Get-Date) - $cacheFile.LastWriteTime
         if ($age.TotalDays -lt 7) {
-            Write-Host "Using cached hero map ($([math]::Floor($age.TotalDays)) days old)"
-            return Get-Content $cacheFile.FullName -Encoding UTF8 | ConvertFrom-Json
+            return Get-Content $CachePath -Encoding UTF8 | ConvertFrom-Json
         }
     }
     
-    Write-Host "Fetching hero map from OpenDota..."
+    Write-Host "Fetching hero map..."
     
     try {
         $heroes = Invoke-RestMethod -Uri "https://api.opendota.com/api/heroes" -Method Get -ErrorAction Stop
@@ -65,17 +98,15 @@ function Get-HeroMap {
         }
         
         $heroes | ConvertTo-Json -Depth 5 | Set-Content -Path $CachePath -Encoding UTF8
-        Write-Host "Cached hero map to $CachePath"
         
         return $heroes
     }
     catch {
-        if ($cacheFile) {
-            Write-Host "Failed to fetch hero map, using stale cache"
-            return Get-Content $cacheFile.FullName -Encoding UTF8 | ConvertFrom-Json
+        if (Test-Path $CachePath) {
+            return Get-Content $CachePath -Encoding UTF8 | ConvertFrom-Json
         }
         throw "OpenDota hero map fetch failed and no cache available: $($_.Exception.Message)"
     }
 }
 
-Export-ModuleMember -Function Get-OpenDotaMatches, Get-HeroMap
+Export-ModuleMember -Function Get-OpenDotaMatches, Get-OpenDotaMatchDetail, Get-HeroMap

@@ -123,4 +123,178 @@ query PositionStats {
     return $result
 }
 
-Export-ModuleMember -Function Get-StratzHeroStats
+function Get-StratzHeroWinrate {
+    [CmdletBinding()]
+    param(
+        [string]$Token,
+        [string]$Bracket = "DIVINE_IMMORTAL"
+    )
+    
+    if (-not $Token) {
+        throw "Stratz API token is required."
+    }
+    
+    Write-Host "Fetching current hero winrates from Stratz..."
+    
+    $headers = @{
+        "Authorization" = "Bearer $Token"
+        "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "Accept" = "application/json"
+    }
+    
+    $bracketList = if ($Bracket -eq "DIVINE_IMMORTAL") { "DIVINE, IMMORTAL" } else { $Bracket }
+    
+    $queryBody = @{ query = @"
+query HeroWinrates {
+  heroStats {
+    winHour(bracketIds: [$bracketList], gameModeIds: [ALL_PICK_RANKED]) {
+      heroId
+      winCount
+      matchCount
+    }
+  }
+}
+"@ } | ConvertTo-Json -Compress
+    
+    $queryPath = Join-Path $env:TEMP "stratz_winrate_query_$(New-Guid).json"
+    $queryBody | Out-File -FilePath $queryPath -Encoding utf8
+    
+    try {
+        $curlOutput = curl.exe -s -X POST `
+            -H "Authorization: Bearer $Token" `
+            -H "Content-Type: application/json" `
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" `
+            -H "Accept: application/json" `
+            -H "Accept-Language: en-US,en;q=0.9" `
+            --data-binary "@$queryPath" `
+            "https://api.stratz.com/graphql" 2>&1
+        
+        Remove-Item $queryPath -Force -ErrorAction SilentlyContinue
+        
+        $responseBody = $curlOutput | Out-String
+        
+        if ($LASTEXITCODE -ne 0 -or $responseBody -like "*Just a moment*" -or $responseBody -like "*cloudflare*") {
+            throw "Stratz API blocked (Cloudflare). Debug in GraphiQL: https://api.stratz.com/graphiql"
+        }
+        
+        $response = $responseBody | ConvertFrom-Json
+        
+        if ($response.errors) {
+            $errorMsg = ($response.errors | ForEach-Object { $_.message }) -join "; "
+            throw "Stratz GraphQL errors: $errorMsg"
+        }
+        
+        $rows = $response.data.heroStats.winHour
+        if ($rows) {
+            Write-Host "Fetched winrate data for $($rows.Count) heroes"
+            return $rows
+        } else {
+            Write-Host "No winrate data returned from Stratz"
+            return @()
+        }
+    }
+    catch {
+        if ($_.Exception.Message -like "*Cloudflare*") {
+            throw
+        }
+        Write-Host "Warning: Failed to fetch winrate from Stratz: $($_.Exception.Message)"
+        return @()
+    }
+}
+
+function Get-StratzPlayerMatches {
+    [CmdletBinding()]
+    param(
+        [string]$Token,
+        [long]$SteamAccountId,
+        [int]$Take = 100
+    )
+    
+    if (-not $Token) {
+        throw "Stratz API token is required."
+    }
+    
+    Write-Host "Fetching recent matches from Stratz (account: $SteamAccountId)..."
+    
+    $headers = @{
+        "Authorization" = "Bearer $Token"
+        "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "Accept" = "application/json"
+    }
+    
+    $query = @'
+query PlayerMatches($steamAccountId: Long!, $take: Int) {
+  player(steamAccountId: $steamAccountId) {
+    matches(request: { take: $take }) {
+      matchId
+      heroId
+      isWin
+      startDateTime
+      duration
+      gameMode
+      lobbyType
+      playerSlot
+      kills
+      deaths
+      assists
+      position
+    }
+  }
+}
+'@
+    
+    $queryBody = @{
+        query = $query
+        variables = @{
+            steamAccountId = $SteamAccountId
+            take = $Take
+        }
+    } | ConvertTo-Json -Compress
+    
+    $queryPath = Join-Path $env:TEMP "stratz_player_matches_$(New-Guid).json"
+    $queryBody | Out-File -FilePath $queryPath -Encoding utf8
+    
+    try {
+        $curlOutput = curl.exe -s -X POST `
+            -H "Authorization: Bearer $Token" `
+            -H "Content-Type: application/json" `
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" `
+            -H "Accept: application/json" `
+            -H "Accept-Language: en-US,en;q=0.9" `
+            --data-binary "@$queryPath" `
+            "https://api.stratz.com/graphql" 2>&1
+        
+        Remove-Item $queryPath -Force -ErrorAction SilentlyContinue
+        
+        $responseBody = $curlOutput | Out-String
+        
+        if ($LASTEXITCODE -ne 0 -or $responseBody -like "*Just a moment*" -or $responseBody -like "*cloudflare*") {
+            throw "Stratz API blocked (Cloudflare). Debug in GraphiQL: https://api.stratz.com/graphiql"
+        }
+        
+        $response = $responseBody | ConvertFrom-Json
+        
+        if ($response.errors) {
+            $errorMsg = ($response.errors | ForEach-Object { $_.message }) -join "; "
+            throw "Stratz GraphQL errors: $errorMsg"
+        }
+        
+        $matches = $response.data.player.matches
+        if ($matches) {
+            Write-Host "Fetched $($matches.Count) matches from Stratz"
+            return $matches
+        } else {
+            Write-Host "No matches returned from Stratz"
+            return @()
+        }
+    }
+    catch {
+        if ($_.Exception.Message -like "*Cloudflare*") {
+            throw
+        }
+        Write-Host "Warning: Failed to fetch matches from Stratz: $($_.Exception.Message)"
+        return @()
+    }
+}
+
+Export-ModuleMember -Function Get-StratzHeroStats, Get-StratzHeroWinrate, Get-StratzPlayerMatches
