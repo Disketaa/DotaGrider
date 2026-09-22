@@ -186,9 +186,17 @@ $RecentMatchLimit = 20
 # Recent grid settings
 $RecentGrid = $Settings.recent_grid
 $RecentXOffset = if ($RecentGrid -and $RecentGrid.x_offset) { [int]$RecentGrid.x_offset } else { 720 }
-$RecentWidth = if ($RecentGrid -and $RecentGrid.width) { [int]$RecentGrid.width } else { 750 }
+$RecentYOffset = if ($RecentGrid -and $RecentGrid.y_offset) { [int]$RecentGrid.y_offset } else { $YOffset }
+$RecentWidth = if ($RecentGrid -and $RecentGrid.width) { [int]$RecentGrid.width } else { $Width }
+$RecentHeight = if ($RecentGrid -and $RecentGrid.height) { [int]$RecentGrid.height } else { $Height }
 $RecentMaxHeroes = if ($RecentGrid -and $RecentGrid.max_heroes) { [int]$RecentGrid.max_heroes } else { 6 }
-Write-Host "Recent grid settings: x_offset=$RecentXOffset width=$RecentWidth max_heroes=$RecentMaxHeroes"
+Write-Host "Recent grid settings: x_offset=$RecentXOffset y_offset=$RecentYOffset width=$RecentWidth height=$RecentHeight max_heroes=$RecentMaxHeroes"
+
+# Recent winrate grid settings
+$RecentWinrateGrid = $Settings.recent_winrate_grid
+$RecentWinrateXOffset = if ($RecentWinrateGrid -and $RecentWinrateGrid.x_offset) { [int]$RecentWinrateGrid.x_offset } else { $WinrateXOffset }
+$RecentWinrateYOffset = if ($RecentWinrateGrid -and $RecentWinrateGrid.y_offset) { [int]$RecentWinrateGrid.y_offset } else { $WinrateYOffset }
+Write-Host "Recent winrate grid settings: x_offset=$RecentWinrateXOffset y_offset=$RecentWinrateYOffset"
 Write-Host "Recent grid: x=$RecentXOffset width=$RecentWidth max=$RecentMaxHeroes"
 
 Write-Host "=== DotaGrider ==="
@@ -338,11 +346,15 @@ if ($StratzAccountId) {
             }
         }
         
-        # Create categories for positions 1-5 (skip empty)
+        # Create recent hero categories (skip empty positions)
+        $RecentHeroCategories = @{}
+        $RecentWinrateCategories = @{}
+        $firstRecentPos = $null
         for ($pos = 1; $pos -le 5; $pos++) {
-            $orderedHeroIds = @()
+            $recentHeroIds = @()
             if ($LaneHeroes[$pos]) {
-                # Dedup and sort by Stratz match count for this position (descending)
+                if (-not $firstRecentPos) { $firstRecentPos = $pos }
+                # Dedup and sort by player's recent match count for this position (descending)
                 $seen = [System.Collections.Generic.HashSet[int]]::new()
                 $uniqueIds = @()
                 foreach ($id in $LaneHeroes[$pos]) {
@@ -350,27 +362,52 @@ if ($StratzAccountId) {
                         $uniqueIds += $id
                     }
                 }
-                $matchField = "${pos}_match"
                 $orderedHeroIds = $uniqueIds | Sort-Object { 
                     $id = $_
-                    $h = $Heroes | Where-Object { $_.id -eq $id } | Select-Object -First 1
-                    if ($h -and $h.$matchField) { $h.$matchField } else { 0 }
+                    ($LaneHeroes[$pos] | Where-Object { $_ -eq $id }).Count
                 } -Descending
                 
                 # Truncate to max_heroes
                 if ($orderedHeroIds.Count -gt $RecentMaxHeroes) {
                     $orderedHeroIds = $orderedHeroIds | Select-Object -First $RecentMaxHeroes
                 }
+                $recentHeroIds = $orderedHeroIds
             }
             
-            if ($orderedHeroIds.Count -gt 0) {
-                $RecentPositionCategories += [PSCustomObject]@{
-                    category_name = $(if ($pos -eq 1) { $RecentHeroesLabel } else { "" })
+            if ($recentHeroIds.Count -gt 0) {
+                # Hero ids category
+                $CategoryName = if ($firstRecentPos -eq $pos) { $RecentHeroesLabel } else { "" }
+                $RecentHeroCategories[$pos] = [PSCustomObject]@{
+                    category_name = $CategoryName
                     x_position = $RecentXOffset
-                    y_position = $(if ($pos -eq 1) { $InitialY } else { ($pos - 1) * $YOffset })
+                    y_position = $InitialY + ($pos - 1) * $YOffset
                     width = $RecentWidth
-                    height = $Height
-                    hero_ids = $orderedHeroIds
+                    height = $RecentHeight
+                    hero_ids = $recentHeroIds
+                }
+                
+                # Winrate label category
+                $winField = "${pos}_win"
+                $WinrateStrings = @()
+                foreach ($id in $recentHeroIds) {
+                    $h = $Heroes | Where-Object { $_.id -eq $id } | Select-Object -First 1
+                    if ($h -and $h.$winField -and $h.$matchField -and $h.$matchField -gt 0) {
+                        $wrExact = ($h.$winField / $h.$matchField) * 100
+                        $wr = [math]::Round($wrExact, 0)
+                        $WinrateStrings += "$wr%"
+                    } else {
+                        $WinrateStrings += "0%"
+                    }
+                }
+                
+                $WinrateCategoryName = $WinrateStrings -join $WinrateSeparator
+                $RecentWinrateCategories[$pos] = [PSCustomObject]@{
+                    category_name = $WinrateCategoryName
+                    x_position = $RecentWinrateXOffset
+                    y_position = $WinrateY + ($pos - 1) * $RecentWinrateYOffset
+                    width = 0
+                    height = 0
+                    hero_ids = @()
                 }
             }
         }
@@ -389,10 +426,28 @@ $TopConfig = New-HeroGridConfig -Heroes $Heroes -PositionFields $PositionFields 
 $RoleCategories = New-DecoratorGrid -YOffset $RoleYOffset -Y $RoleY -Offset 0 -XOffset $RoleXOffset -ConfigPrefix "ROLES" -Heroes $Heroes -PositionFields $PositionFields -RoleNumbers
 $WinrateCategories = New-DecoratorGrid -YOffset $WinrateYOffset -Y $WinrateY -Offset 0 -XOffset $WinrateXOffset -ConfigPrefix "WINRATES" -Heroes $Heroes -PositionFields $PositionFields -Count $MaxHeroes -WinrateSeparator $WinrateSeparator
 
-# Append categories to STRATZ config
+# Append categories to STRATZ config in exact order:
+# 1. META HEROES
+# 2. DECO NUMBERS
+# 3. WINRATE FOR META HEROES
+# 4. RECENT HEROES (only played positions)
+# 5. WINRATE FOR RECENT HEROES (only played positions)
 $TopConfig.configs[0].categories += $RoleCategories.configs[0].categories
 $TopConfig.configs[0].categories += $WinrateCategories.configs[0].categories
-$TopConfig.configs[0].categories += $RecentPositionCategories
+
+# Append recent hero categories (only played positions)
+foreach ($pos in 1..5) {
+    if ($RecentHeroCategories[$pos]) {
+        $TopConfig.configs[0].categories += $RecentHeroCategories[$pos]
+    }
+}
+
+# Append recent winrate categories (only played positions)
+foreach ($pos in 1..5) {
+    if ($RecentWinrateCategories[$pos]) {
+        $TopConfig.configs[0].categories += $RecentWinrateCategories[$pos]
+    }
+}
 
 # Merge and write configs
 foreach ($ConfigPath in $TargetCfgPaths) {

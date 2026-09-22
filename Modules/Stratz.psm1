@@ -209,18 +209,12 @@ function Get-StratzPlayerMatches {
 query PlayerMatches($steamAccountId: Long!, $take: Int) {
   player(steamAccountId: $steamAccountId) {
     matches(request: { take: $take }) {
-      matchId
-      heroId
-      isWin
-      startDateTime
-      duration
-      gameMode
-      lobbyType
-      playerSlot
-      kills
-      deaths
-      assists
-      position
+      id
+      players {
+        steamAccountId
+        heroId
+        position
+      }
     }
   }
 }
@@ -265,7 +259,14 @@ query PlayerMatches($steamAccountId: Long!, $take: Int) {
         $playerMatches = $response.data.player.matches
         if ($playerMatches) {
             Write-Host "Fetched $($playerMatches.Count) matches from Stratz"
-            return $playerMatches
+            $result = @()
+            foreach ($match in $playerMatches) {
+                foreach ($player in $match.players) {
+                    if ($player.steamAccountId -ne $SteamAccountId) { continue }
+                    $result += $player
+                }
+            }
+            return $result
         } else {
             Write-Host "No matches returned from Stratz"
             return @()

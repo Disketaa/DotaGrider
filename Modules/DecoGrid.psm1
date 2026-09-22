@@ -46,7 +46,7 @@ function New-DecoratorGrid {
                 $WinrateStrings += "$wr%"
             }
             
-            Write-Host "POS $Pos top: $($TopHeroes.id -join ',') | wr strings: $($WinrateStrings -join ' | ')"
+
             
             while ($WinrateStrings.Count -lt $Count) {
                 $WinrateStrings += "0%"
