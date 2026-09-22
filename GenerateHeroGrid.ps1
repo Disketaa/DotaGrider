@@ -10,6 +10,16 @@ Import-Module "$PSScriptRoot\Modules\Stratz.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\HeroGrid.psm1" -Force
 Import-Module "$PSScriptRoot\Modules\DecoGrid.psm1" -Force
 
+function Format-DotaNumbers {
+    param([string]$Json)
+    $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+    return [Regex]::Replace($Json, '("(?:x_position|y_position|width|height)"\s*:\s*)(\d+(?:\.\d+)?)', {
+        param($m)
+        $num = [double]$m.Groups[2].Value
+        return "$($m.Groups[1].Value)$($num.ToString('F6', $invariant))"
+    })
+}
+
 function Format-Json {
     param([string]$Json)
     $indent = 0
@@ -246,6 +256,7 @@ foreach ($ConfigPath in $TargetCfgPaths) {
     $ExistingConfig.configs = @($ExistingConfig.configs) + @($TopConfig.configs)
 
     $json = $ExistingConfig | ConvertTo-Json -Depth 10 -Compress
+    $json = Format-DotaNumbers -Json $json
     $formatted = Format-Json -Json $json
     [System.IO.File]::WriteAllText($ConfigPath, $formatted, [System.Text.UTF8Encoding]::new($false))
     Write-Host "Updated: $ConfigPath"
